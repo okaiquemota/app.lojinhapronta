@@ -78,6 +78,14 @@ WhatsApp, Analytics e o crédito de rodapé.
 Por cliente mudam dois arquivos: `config-cliente.php` (WhatsApp e Analytics) e
 as quatro cores do `theme.json`. Detalhes em `tema/lojinha-pronta/LEIA-ME.md`.
 
+## `ferramentas/wp-cli/`
+
+Transforma a especificação e o checklist abaixo em scripts: `montar-loja-mae.sh`
+roda as Partes 1-4 da especificação via WP-CLI, `entregar-cliente.sh` troca os
+marcadores, pinta o tema e importa o catálogo por cliente. Detalhes e o aviso
+sobre o que ainda não foi testado contra uma loja real em
+`ferramentas/wp-cli/README.md`.
+
 ## `ESPECIFICACAO-LOJA-MAE.md`
 
 Como montar a instalação-mestre: cinco plugins com a justificativa de cada um, o

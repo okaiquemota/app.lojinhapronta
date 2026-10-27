@@ -1,0 +1,38 @@
+# Um arquivo destes por cliente. Copie, preencha com o briefing e guarde —
+# é registro da entrega, não só input do script.
+#
+#   cp cliente.conf.exemplo cliente-loja-do-kiwi.conf
+
+# Slug do tema instalado no WordPress do cliente (normalmente não muda)
+TEMA_SLUG="lojinha-pronta"
+
+# ── Identidade (vira marcador nas páginas jurídicas e no e-mail) ──────────
+NOME_DA_LOJA="Loja do Kiwi"
+CPF_CNPJ="000.000.000-00"
+EMAIL_DA_LOJA="contato@lojadokiwi.com.br"
+WHATSAPP_NUMERO="5516999999999"       # só números, com 55 e DDD
+WHATSAPP_VISIVEL="(16) 99999-9999"
+CIDADE_UF="Franca, SP"
+NOME_RESPONSAVEL="Aline"
+DIAS_ATENDIMENTO="segunda a sexta"
+HORARIO_ATENDIMENTO="9h às 18h"
+# Vazio = usa a data de hoje
+DATA_ATUALIZACAO=""
+
+# ── Tema (as quatro cores do theme.json + o que vai no config-cliente.php) ─
+COR_MARCA="#124559"
+COR_MARCA_ESCURA="#0a2531"
+COR_DESTAQUE="#cf3f2b"
+COR_SUAVE="#f4f2ef"
+
+WHATSAPP_TEXTO="Oi! Vi sua loja e queria tirar uma dúvida."
+ANALYTICS_GA4="G-XXXXXXXXXX"           # vazio não carrega nada
+CREDITOS="true"                        # "false" só se foi combinado e cobrado à parte
+
+# ── Produtos ───────────────────────────────────────────────────────────
+# Vazio pula a importação (importe pelo painel depois)
+CSV_PRODUTOS=""
+
+# ── Mercado Pago ──────────────────────────────────────────────────────
+# Credenciais ficam de fora deste arquivo de propósito — são sensíveis e
+# o script só ativa o plugin; cole a chave da cliente no painel.
