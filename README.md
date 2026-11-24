@@ -1,104 +1,211 @@
-# Template Lojinha Pronta
+# Lojinha Pronta
 
-Ferramentas e material de apoio para montar as lojas entregues pela
-[Lojinha Pronta](https://lojinhapronta.vercel.app) — WordPress + WooCommerce,
-escopo fechado, entrega repetível.
+Plataforma de lojas de material digital, no modelo da Nuvemshop: a pessoa cria
+a conta, monta a loja no painel e começa a vender. O site da loja nasce sozinho
+em `nomedaloja.lojinhapronta.com.br`, a compradora paga por Pix, cartão ou
+boleto pelo Mercado Pago, e o arquivo é liberado no instante do pagamento.
 
-## O método
+Substitui o modelo anterior (uma instalação WordPress por cliente, montada à
+mão), que continua guardado em [`legado/wordpress/`](legado/wordpress/README.md).
+As páginas legais e o visual da vitrine vieram de lá.
 
-Cada entrega **não** reinstala e reconfigura tudo. Das 25 promessas da landing,
-13 são configuração (Mercado Pago, entrega automática, e-mails, SSL, LGPD, SEO,
-Analytics…), e configuração não cabe num tema — ela vive no banco.
+## Como funciona
 
-Por isso a peça central é uma **loja-mãe**: uma instalação WordPress + Woo
-completa, configurada uma vez, que nunca é entregue. Cada cliente recebe um
-clone dela. As 13 configurações viajam junto; sobra trocar o que é do cliente.
-
-O que muda por cliente:
-
-| item | onde |
-|---|---|
-| cores | paleta do `theme.json` |
-| logo | identidade do site |
-| textos | briefing |
-| produtos | CSV importado (ver abaixo) |
-| domínio, chaves do Mercado Pago, e-mail | configuração do clone |
-
-## `ferramentas/catalogo-para-woo.mjs`
-
-Converte um catálogo em CSV de importação nativa do WooCommerce.
-
-```bash
-node ferramentas/catalogo-para-woo.mjs <produtos.js> <saida.csv> [--base=URL]
+```
+                     ┌──────────── Cloudflare Worker "lojinha-pronta" ────────────┐
+app.lojinhapronta… ──┤  painel da lojista · cadastro · plano · avisos do MP        │
+kiwi.lojinhapronta… ─┤  vitrine da loja "kiwi"                                     │──► D1 (banco)
+dominiodela.com.br ──┤  vitrine com domínio próprio (próximo passo)                │──► R2 (fotos e PDFs)
+                     └─────────────────────────────────────────────────────────────┘
 ```
 
-Cadastrar produto na mão é o item mais caro de cada entrega. O Woo importa CSV
-nativamente, então dez produtos viram um upload de dois minutos. **O briefing do
-cliente deve ser desenhado pra desembocar exatamente nestas colunas.**
+Um Worker só serve tudo. Quem é a loja sai do endereço (`src/lib/dominio.ts`).
+Enquanto o domínio não estiver no Cloudflare, as lojas abrem pelo caminho:
+`…/loja/kiwi`.
 
-Detalhes que o script já resolve:
+**Dinheiro.** Cada lojista conecta a própria conta do Mercado Pago, e a venda
+cai direto nela. A plataforma só cobra a mensalidade, por assinatura recorrente
+na conta da Lojinha Pronta (`MP_ACCESS_TOKEN`).
 
-- `Type: simple, virtual, downloadable` — o Woo entrega o arquivo sozinho, sem
-  plugin de entrega automática
-- `Published: -1` (rascunho) — produto sem PDF anexado é produto que vende e não
-  entrega; entra escondido até o arquivo existir
-- `--base` aponta as imagens pra uma URL pública e o Woo as baixa durante a
-  importação, sem upload manual
-- produtos de afiliado (link com `afid=`) são ignorados: a venda precisa
-  acontecer no checkout do produtor, e o arquivo não é nosso
+**Entrega.** O arquivo só é liberado depois de o Worker *consultar* o pagamento
+na API do Mercado Pago com o token da loja. O aviso (webhook) e a volta do
+checkout só dizem "vá olhar". Pagamento a menos, aviso forjado e aviso repetido
+não liberam nada nem mandam e-mail duas vezes. Reembolso corta o download.
+Se o aviso se perder, a própria página do pedido pergunta ao Mercado Pago
+enquanto espera, e o cron diário confere os pendentes.
 
-> **Validado.** Importado com sucesso em WordPress 7.1 + WooCommerce 11.1.0 +
-> PHP 8.2.29: as 18 colunas mapearam sozinhas, nenhuma caiu em "não importar".
-> Os 6 produtos entraram como rascunho, com **Virtual + Downloadable marcados** —
-> a entrega automática funcionando sem plugin — limite de download aplicado, e as
-> imagens baixadas sozinhas a partir da URL pública.
+**Plano.** A loja nasce com 7 dias de teste grátis (sem cartão). Assinando
+durante o teste, a 1ª cobrança só acontece quando ele acaba. Cancelou: fica no
+ar até o fim do mês pago. Venceu: a vitrine mostra "voltamos logo", mas quem já
+comprou continua baixando.
 
-## `lojas/loja-do-kiwi/`
+## Pastas
 
-Primeira loja real a rodar no template. Gerado a partir do catálogo de
-[movcodebr/lojadokiwi](https://github.com/movcodebr/lojadokiwi):
+| caminho | o quê |
+|---|---|
+| `src/index.tsx` | entrada: decide painel × vitrine pelo endereço; cron diário |
+| `src/plataforma/` | apresentação com planos, cadastro, entrar, painel, `/admin` |
+| `src/loja/` | vitrine: início, categorias, produto, carrinho, pedido, páginas legais |
+| `src/lib/pedidos.ts` | pedido → Mercado Pago → confirmação → liberação |
+| `src/lib/assinaturas.ts` | mensalidade da plataforma |
+| `src/lib/conta-mp.ts` | conta MP de cada lojista (token cifrado, renovação) |
+| `src/webhooks.ts` | avisos do Mercado Pago |
+| `migrations/` | esquema do banco (D1) e os planos iniciais |
+| `public/_lp/` | CSS e JS do painel e da vitrine |
+| `ferramentas/mp-falso.py` | Mercado Pago de mentira, para testar pagamento sem dinheiro |
 
-- 16 produtos no catálogo, **10 são de afiliado** e ficam de fora
-- 6 produtos próprios exportados, todos como rascunho
+## Rodar no computador
 
-Pendente para publicar:
+```bash
+npm install
+```
 
-- [ ] PDFs dos 6 produtos (coluna `Download 1 URL` vazia)
-- [ ] Imagens de 4: Cartão de Votos, Lembrancinha Dia das Mães, Suspiros de
-      Amor, Hot Wheels Personalizado
-- [ ] Hospedagem definida
-- [ ] Conta do Mercado Pago
+```bash
+cp .dev.vars.exemplo .dev.vars
+```
 
-## `tema/lojinha-pronta/`
+```bash
+npm run banco:local
+```
 
-Tema filho do Twenty Twenty-Five. Herda os modelos do pai e recebe atualização
-de segurança pelo WordPress; carrega só o que é da entrega — paleta, botão de
-WhatsApp, Analytics e o crédito de rodapé.
+```bash
+npm run dev
+```
 
-Por cliente mudam dois arquivos: `config-cliente.php` (WhatsApp e Analytics) e
-as quatro cores do `theme.json`. Detalhes em `tema/lojinha-pronta/LEIA-ME.md`.
+Abra <http://localhost:8787>, crie uma loja e veja a vitrine em
+`http://localhost:8787/loja/<endereço>` (ou `http://<endereço>.localhost:8787`).
 
-## `ESPECIFICACAO-LOJA-MAE.md`
+## Colocar no ar
 
-Como montar a instalação-mestre: cinco plugins com a justificativa de cada um, o
-que **não** instalar e o que usar no lugar, e as configurações com valor exato
-campo a campo. Feito para ser executado como lista, sem decidir nada no caminho.
+### 1. Banco, arquivos e segredos (uma vez)
 
-## `CHECKLIST-ENTREGA.md`
+```bash
+npx wrangler d1 create lojinha-pronta
+```
 
-O roteiro de uma entrega, do clone à mensagem final. Cada linha aponta para uma
-das 25 promessas da landing (`[P01]`…`[P25]`), então não dá pra esquecer o que
-foi vendido.
+Cole o `database_id` que aparecer no `wrangler.jsonc`.
 
-Marca também o que **vem pronto do clone** e o que é **trabalho por cliente** —
-é essa separação que faz a entrega caber numa tarde em vez de num dia.
+```bash
+npx wrangler r2 bucket create lojinha-pronta-arquivos
+```
 
-Os tempos são estimativa (somam ~3h50). Cronometre a primeira entrega real e
-corrija: a promessa de 4–6h só vale com número medido.
+```bash
+npm run banco:remoto
+```
+
+```bash
+openssl rand -base64 48 | npx wrangler secret put SEGREDO_APP
+```
+
+```bash
+npx wrangler secret put ADMIN_EMAILS
+```
+
+O `SEGREDO_APP` cifra os tokens do Mercado Pago das lojistas. **Não troque
+depois:** trocar obriga todas a reconectar o Mercado Pago.
+
+```bash
+npm run deploy
+```
+
+A plataforma fica em `https://lojinha-pronta.okaiquemota.workers.dev`.
+
+### 2. Mercado Pago
+
+1. Em [Suas integrações](https://www.mercadopago.com.br/developers/panel/app),
+   crie uma aplicação **Pagamentos online → Checkout Pro**, na conta que recebe
+   as mensalidades.
+2. **Credenciais de produção** → copie o Access Token:
+   ```bash
+   npx wrangler secret put MP_ACCESS_TOKEN
+   ```
+3. **Webhooks**: URL `<APP_URL>/webhooks/mercadopago`, evento **Planos e
+   assinaturas**. É o que avisa quando uma mensalidade é paga ou cancelada.
+4. Para o botão "Conectar Mercado Pago" das lojistas (OAuth): na mesma
+   aplicação, cadastre a URL de redirecionamento
+   `<APP_URL>/painel/pagamentos/retorno` e guarde:
+   ```bash
+   npx wrangler secret put MP_CLIENT_ID
+   ```
+   ```bash
+   npx wrangler secret put MP_CLIENT_SECRET
+   ```
+   Sem isso, a lojista conecta colando o Access Token dela, com o passo a passo
+   na própria tela.
+
+### 3. E-mail (Resend)
+
+Sem e-mail a loja vende e entrega do mesmo jeito: a página do pedido mostra os
+arquivos, e a lojista copia o link no painel. Com e-mail, a compradora recebe o
+link, a lojista recebe "você vendeu" e "esqueci a senha" funciona.
+
+1. Crie conta no [Resend](https://resend.com), adicione o domínio
+   `lojinhapronta.com.br` e crie no DNS os registros que ele pedir.
+2. ```bash
+   npx wrangler secret put RESEND_API_KEY
+   ```
+
+### 4. Subdomínio de cada loja
+
+O `*.lojinhapronta.com.br` precisa do DNS no Cloudflare, e hoje o domínio usa
+o DNS do Registro.br.
+
+1. No Cloudflare: **Add a domain** → `lojinhapronta.com.br` (plano Free).
+2. No Registro.br: troque os servidores DNS para os dois que o Cloudflare
+   mostrar.
+3. No Cloudflare, recrie o que já existe hoje (a landing está na Vercel), com
+   **proxy desligado** (nuvem cinza): `A @ 216.198.79.1` e
+   `CNAME www lojinhapronta.com.br`.
+4. No `wrangler.jsonc`, descomente `routes`, troque `APP_URL` para
+   `https://app.lojinhapronta.com.br` e `SUBDOMINIOS_ATIVOS` para `"sim"`.
+5. Crie no Cloudflare o registro `AAAA * 100::` com proxy **ligado**: o Worker
+   responde por ele.
+6. `npm run deploy`. Os endereços antigos `/loja/<nome>` passam a redirecionar
+   para o subdomínio.
+7. Atualize no Mercado Pago as URLs do webhook e do redirecionamento para o
+   novo `APP_URL`.
+
+### Plano do Cloudflare
+
+O plano grátis de Workers limita cada requisição a 10 ms de processamento, e
+conferir senha (PBKDF2) gasta mais que isso. Login e cadastro podem falhar de
+vez em quando no plano grátis. O **Workers Paid** (US$ 5/mês) tira esse limite
+e é o recomendado para vender.
+
+## Preços dos planos
+
+Os planos estão no banco, não no código. Trocar preço não exige deploy:
+
+```bash
+npx wrangler d1 execute DB --remote --command "UPDATE planos SET preco_centavos = 3990 WHERE id = 'essencial'"
+```
+
+Assinaturas já ativas continuam com o valor antigo até a lojista mudar de plano.
+
+## Testar o pagamento sem dinheiro
+
+```bash
+python3 ferramentas/mp-falso.py
+```
+
+Com `MP_API_TESTE=http://127.0.0.1:9999` no `.dev.vars`, o Worker conversa
+com esse Mercado Pago de mentira. Para simular a compradora pagando:
+
+```bash
+curl -X POST http://127.0.0.1:9999/_pagar -d '{"id": 1}'
+```
+
+```bash
+curl -X POST "http://localhost:8787/webhooks/mercadopago?loja=<id-da-loja>" -d '{"type":"payment","data":{"id":"1"}}'
+```
 
 ## Próximos passos
 
-1. Executar a especificação numa instalação WordPress
-2. Testar o tema e o import do CSV num WooCommerce real
-3. Briefing que desemboca no CSV
-4. Vídeos e manual (feitos uma vez, servem pra sempre)
+- **Domínio próprio por loja** (`lojadaana.com.br`): Cloudflare for SaaS,
+  grátis até 100 domínios. O banco e o roteamento já esperam por isso
+  (`lojas.dominio`), falta a tela.
+- **Atualizar a landing** (lojinhapronta.com.br), que ainda vende o serviço
+  feito à mão por R$ 597, para levar ao cadastro.
+- **Trazer a Loja do Kiwi** para cá: os produtos dela já estão no catálogo do
+  legado.
+- Cupom de desconto, produto físico com frete, relatórios.
