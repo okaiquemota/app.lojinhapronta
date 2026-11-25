@@ -32,14 +32,14 @@ admin.get('/', async (c) => {
      FROM lojas l JOIN usuarios u ON u.id = l.dono_id ORDER BY l.criada_em DESC LIMIT 500`,
   ).all<Linha>()
   const lojas = r.results
-  const assinantes = lojas.filter((l) => l.assinatura_status === 'authorized').length
+  const assinantes = lojas.filter((l) => situacao(l).tipo === 'assinante').length
   const emTeste = lojas.filter((l) => situacao(l).tipo === 'teste').length
   const mrr = await c.env.DB.prepare(
-    `SELECT COALESCE(SUM(p.preco_centavos),0) AS v FROM lojas l JOIN planos p ON p.id = l.plano_id WHERE l.assinatura_status = 'authorized'`,
+    `SELECT COALESCE(SUM(p.preco_centavos),0) AS v FROM lojas l JOIN planos p ON p.id = l.plano_id WHERE l.assinatura_status IN ('active', 'past_due') AND l.assinatura_cancelada = 0`,
   ).first<{ v: number }>()
   const tag = (l: Loja) => {
     const s = situacao(l)
-    if (s.tipo === 'assinante') return <Etiqueta cor="verde">assinante</Etiqueta>
+    if (s.tipo === 'assinante') return s.atrasada ? <Etiqueta cor="amarelo">pagamento atrasado</Etiqueta> : <Etiqueta cor="verde">{l.assinatura_status === 'trialing' ? 'assinante (no teste)' : 'assinante'}</Etiqueta>
     if (s.tipo === 'teste') return <Etiqueta cor="azul">teste até {dataBR(s.ate)}</Etiqueta>
     if (s.tipo === 'cancelada') return <Etiqueta cor="amarelo">cancelada</Etiqueta>
     if (s.tipo === 'fechada') return <Etiqueta>fechada</Etiqueta>

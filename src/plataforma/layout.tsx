@@ -65,6 +65,16 @@ const MENU: { href: string; texto: string; icone: string; chave: string }[] = [
 /** Faixa no topo do painel com o estado do teste / assinatura. */
 function FaixaPlano({ loja }: { loja: Loja }) {
   const s = situacaoDaAssinatura(loja)
+  if (s.tipo === 'assinante' && s.atrasada) {
+    return (
+      <div class="faixa-plano faixa-plano--forte">
+        <span>
+          <strong>O pagamento da mensalidade falhou.</strong> Atualize o cartão para a loja não sair do ar.
+        </span>
+        <a href="/painel/plano/cartao">Atualizar cartão</a>
+      </div>
+    )
+  }
   if (s.tipo === 'assinante') return null
   if (s.tipo === 'teste') {
     const d = diasAte(s.ate)
@@ -85,10 +95,20 @@ function FaixaPlano({ loja }: { loja: Loja }) {
       </div>
     )
   }
+  if (loja.assinatura_status === 'past_due') {
+    return (
+      <div class="faixa-plano faixa-plano--forte">
+        <span>
+          <strong>Sua loja está fora do ar.</strong> A mensalidade está atrasada há mais de 14 dias. Assim que o cartão passar, ela volta.
+        </span>
+        <a href="/painel/plano/cartao">Atualizar cartão</a>
+      </div>
+    )
+  }
   return (
     <div class="faixa-plano faixa-plano--forte">
       <span>
-        <strong>Sua loja está fora do ar.</strong> O teste grátis acabou — assine um plano para voltar a vender.
+        <strong>Sua loja está fora do ar.</strong> {loja.assinatura_id ? 'A assinatura terminou' : 'O teste grátis acabou'} — assine um plano para voltar a vender.
       </span>
       <a href="/painel/plano">Assinar agora</a>
     </div>

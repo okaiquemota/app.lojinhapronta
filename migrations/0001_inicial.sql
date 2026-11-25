@@ -47,13 +47,14 @@ CREATE TABLE planos (
   descricao         TEXT NOT NULL DEFAULT '',
   preco_centavos    INTEGER NOT NULL CHECK (preco_centavos > 0),
   limite_produtos   INTEGER,                -- NULL = sem limite
-  taxa_venda        REAL NOT NULL DEFAULT 0, -- % de cada venda (só com Mercado Pago conectado pelo botão)
+  taxa_venda        REAL NOT NULL DEFAULT 0, -- % de cada venda da lojista (só com Mercado Pago conectado pelo botão)
   recursos          TEXT NOT NULL DEFAULT '[]', -- JSON: lista de frases para a tela de planos
   ordem             INTEGER NOT NULL DEFAULT 0,
   ativo             INTEGER NOT NULL DEFAULT 1
 );
 
--- Preços iniciais. Trocar é um UPDATE, não um deploy.
+-- Preços iniciais. Trocar é um UPDATE, não um deploy: o preço no Stripe é
+-- criado sozinho na próxima assinatura (src/lib/stripe.ts, precoDoPlano).
 INSERT INTO planos (id, nome, descricao, preco_centavos, limite_produtos, taxa_venda, recursos, ordem) VALUES
   ('essencial', 'Essencial', 'Para começar a vender', 2990, 30, 0,
    '["Até 30 produtos","Pix, cartão e boleto pelo Mercado Pago","Entrega automática do arquivo","Endereço sualoja.lojinhapronta.com.br","Sem taxa por venda"]', 1),
@@ -96,14 +97,19 @@ CREATE TABLE lojas (
   aberta            INTEGER NOT NULL DEFAULT 1,
   plano_id          TEXT REFERENCES planos(id),
   teste_ate         TEXT NOT NULL,
-  assinatura_id     TEXT,
-  assinatura_status TEXT,                  -- pending | authorized | paused | cancelled
-  assinatura_valida_ate TEXT,              -- próxima cobrança: até quando já está pago
+  -- mensalidade da plataforma, no Stripe
+  stripe_cliente_id TEXT,
+  assinatura_id     TEXT,                  -- sub_… no Stripe
+  assinatura_status TEXT,                  -- status do Stripe: trialing | active | past_due | canceled | unpaid | incomplete…
+  assinatura_valida_ate TEXT,              -- fim do período já pago (current_period_end)
+  assinatura_cancelada INTEGER NOT NULL DEFAULT 0, -- cancelou: vale até assinatura_valida_ate e não renova
+  assinatura_atrasada_desde TEXT,          -- 1ª vez que o Stripe disse past_due; 14 dias assim, a loja sai do ar
   ultimo_pedido     INTEGER NOT NULL DEFAULT 0,
   criada_em         TEXT NOT NULL,
   atualizada_em     TEXT NOT NULL
 );
 CREATE INDEX lojas_assinatura ON lojas(assinatura_id);
+CREATE INDEX lojas_cliente_stripe ON lojas(stripe_cliente_id);
 
 -- Credenciais do Mercado Pago da lojista. Tabela à parte para nenhuma
 -- consulta de vitrine carregar o token sem querer. Os tokens ficam cifrados

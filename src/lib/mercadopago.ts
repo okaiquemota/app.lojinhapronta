@@ -1,9 +1,9 @@
 /**
- * Cliente mínimo da API do Mercado Pago. Só o que a plataforma usa:
+ * Cliente mínimo da API do Mercado Pago, usado nas vendas das lojistas.
+ * (A mensalidade da plataforma é no Stripe: src/lib/stripe.ts.)
  *
  * - Checkout Pro (preferência) para a venda da lojista — Pix, cartão e boleto
  * - consulta de pagamento, que é a ÚNICA fonte de verdade para liberar arquivo
- * - assinatura (preapproval) para a mensalidade da plataforma
  * - OAuth, para a lojista conectar a conta dela com um botão
  */
 
@@ -153,46 +153,6 @@ export async function renovarToken(clientId: string, clientSecret: string, refre
   const j = await r.json()
   if (!r.ok) throw new ErroMP(r.status, j)
   return j as TokenOAuth
-}
-
-// ── mensalidade da plataforma ──────────────────────────────────────────────
-
-export type Assinatura = {
-  id: string
-  status: 'pending' | 'authorized' | 'paused' | 'cancelled'
-  external_reference: string | null
-  init_point: string
-  payer_email?: string
-  next_payment_date?: string | null
-  auto_recurring: { transaction_amount: number; frequency: number; frequency_type: string; start_date?: string; end_date?: string }
-  reason: string
-}
-
-export function criarAssinatura(
-  token: string,
-  dados: {
-    reason: string
-    external_reference: string
-    payer_email: string
-    back_url: string
-    auto_recurring: { frequency: 1; frequency_type: 'months'; transaction_amount: number; currency_id: 'BRL'; start_date?: string }
-    status: 'pending'
-  },
-): Promise<Assinatura> {
-  return chamar<Assinatura>(token, 'POST', '/preapproval', dados)
-}
-
-export function buscarAssinatura(token: string, id: string): Promise<Assinatura> {
-  return chamar<Assinatura>(token, 'GET', `/preapproval/${encodeURIComponent(id)}`)
-}
-
-export function alterarAssinatura(token: string, id: string, dados: Record<string, unknown>): Promise<Assinatura> {
-  return chamar<Assinatura>(token, 'PUT', `/preapproval/${encodeURIComponent(id)}`, dados)
-}
-
-/** Cobrança mensal de uma assinatura — chega por aviso e aponta para a assinatura. */
-export function buscarCobrancaDeAssinatura(token: string, id: string): Promise<{ id: number; preapproval_id: string; status: string }> {
-  return chamar(token, 'GET', `/authorized_payments/${encodeURIComponent(id)}`)
 }
 
 /** "Loja do Kiwi!" → "LOJADOKIWI": o que aparece na fatura do cartão. */

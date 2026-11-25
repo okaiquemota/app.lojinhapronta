@@ -14,12 +14,16 @@ export type Env = {
   SEGREDO_APP: string
   /** E-mails que veem /admin, separados por vírgula. */
   ADMIN_EMAILS: string
-  MP_ACCESS_TOKEN?: string
+  /** Mensalidade da plataforma. sk_live_… (ou sk_test_… para testar). */
+  STRIPE_SECRET_KEY?: string
+  /** whsec_… do webhook cadastrado no Stripe. */
+  STRIPE_WEBHOOK_SECRET?: string
   MP_CLIENT_ID?: string
   MP_CLIENT_SECRET?: string
   RESEND_API_KEY?: string
-  /** Só desenvolvimento: Mercado Pago de mentira em http://127.0.0.1:porta */
+  /** Só desenvolvimento: Mercado Pago e Stripe de mentira em http://127.0.0.1:porta */
   MP_API_TESTE?: string
+  STRIPE_API_TESTE?: string
 }
 
 export type Usuario = {
@@ -69,9 +73,12 @@ export type Loja = {
   aberta: number
   plano_id: string | null
   teste_ate: string
+  stripe_cliente_id: string | null
   assinatura_id: string | null
   assinatura_status: string | null
   assinatura_valida_ate: string | null
+  assinatura_cancelada: number
+  assinatura_atrasada_desde: string | null
   ultimo_pedido: number
   criada_em: string
   atualizada_em: string

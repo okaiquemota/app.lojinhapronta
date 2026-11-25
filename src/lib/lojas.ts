@@ -26,19 +26,32 @@ export async function plano(env: Env, id: string | null): Promise<Plano | null> 
 
 export type Situacao =
   | { noAr: true; tipo: 'teste'; ate: string }
-  | { noAr: true; tipo: 'assinante' }
+  | { noAr: true; tipo: 'assinante'; atrasada: boolean }
   | { noAr: true; tipo: 'cancelada'; ate: string }
   | { noAr: false; tipo: 'vencida' }
   | { noAr: false; tipo: 'fechada' }
 
+// Status do Stripe em que a assinatura está valendo. past_due: o cartão falhou e
+// o Stripe ainda está tentando — a loja não sai do ar no meio das tentativas.
+const EM_DIA = ['active', 'trialing', 'past_due']
+// Trava própria: mesmo que o Stripe fique em past_due para sempre (depende da
+// configuração de cobrança falha no painel dele), 14 dias sem pagar tira do ar.
+const TOLERANCIA_ATRASO = 14 * 86_400_000
+
 /** A assinatura em dia (ou o teste grátis) é o que mantém a vitrine no ar. */
 export function situacaoDaAssinatura(loja: Loja): Exclude<Situacao, { tipo: 'fechada' }> {
   const hoje = agora()
-  if (loja.assinatura_status === 'authorized') return { noAr: true, tipo: 'assinante' }
-  // Cancelou ou pausou: fica no ar até o fim do período que já pagou.
-  if (loja.assinatura_valida_ate && loja.assinatura_valida_ate > hoje && loja.assinatura_status !== 'pending') {
-    return { noAr: true, tipo: 'cancelada', ate: loja.assinatura_valida_ate }
+  const status = loja.assinatura_status ?? ''
+  const validaAte = loja.assinatura_valida_ate
+  const atrasoEstourou =
+    status === 'past_due' && !!loja.assinatura_atrasada_desde && Date.now() - Date.parse(loja.assinatura_atrasada_desde) > TOLERANCIA_ATRASO
+  if (EM_DIA.includes(status) && !atrasoEstourou) {
+    // Cancelou: fica no ar até o fim do período que já pagou, e não renova.
+    if (loja.assinatura_cancelada && validaAte) return { noAr: true, tipo: 'cancelada', ate: validaAte }
+    return { noAr: true, tipo: 'assinante', atrasada: status === 'past_due' }
   }
+  // Encerrada pelo Stripe antes do fim do período pago (ex.: cancelada no painel dele).
+  if (status === 'canceled' && validaAte && validaAte > hoje) return { noAr: true, tipo: 'cancelada', ate: validaAte }
   if (loja.teste_ate > hoje) return { noAr: true, tipo: 'teste', ate: loja.teste_ate }
   return { noAr: false, tipo: 'vencida' }
 }

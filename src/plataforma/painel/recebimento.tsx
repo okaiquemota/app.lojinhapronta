@@ -5,9 +5,19 @@ import { CartoesPlanos } from '../publico'
 import { contaConectada, desconectarConta, salvarConta } from '../../lib/conta-mp'
 import { trocarCodigo, urlAutorizacao, ErroMP } from '../../lib/mercadopago'
 import { abrirAssinado, assinar } from '../../lib/seguranca'
-import { dataBR, diasAte, emailValido, campo, plural, reais } from '../../lib/formato'
+import { dataBR, diasAte, campo, plural, reais } from '../../lib/formato'
 import { plano as buscarPlano, planos as listarPlanos, situacaoDaAssinatura } from '../../lib/lojas'
-import { cancelarAssinatura, iniciarAssinatura, sincronizarAssinatura, trocarPlano } from '../../lib/assinaturas'
+import {
+  cancelarAssinatura,
+  concluirCheckout,
+  iniciarAssinatura,
+  portalDeCobranca,
+  reativarAssinatura,
+  sincronizarAssinatura,
+  trocarPlano,
+} from '../../lib/assinaturas'
+import { stripeLigado } from '../../lib/stripe'
+import type { Loja } from '../../tipos'
 
 export function rotasRecebimento(app: AppPainel) {
   // ── Mercado Pago da lojista ──────────────────────────────────────────────
@@ -137,27 +147,29 @@ export function rotasRecebimento(app: AppPainel) {
     return c.redirect('/painel/pagamentos')
   })
 
-  // ── plano da plataforma ──────────────────────────────────────────────────
+  // ── plano da plataforma (Stripe) ────────────────────────────────────────
   app.get('/plano', async (c) => {
     let l = c.get('loja')
-    // Voltou do checkout de assinatura, ou tem uma pendente: pergunta como ficou.
-    const voltou = c.req.query('preapproval_id')
-    const idParaConferir = voltou && /^[\w-]{6,64}$/.test(voltou) ? voltou : l.assinatura_status === 'pending' ? l.assinatura_id : null
-    if (idParaConferir && c.env.MP_ACCESS_TOKEN) {
+    const ligado = stripeLigado(c.env)
+    // Voltou do Checkout, ou a assinatura pode ter mudado no Stripe: confere antes de mostrar.
+    const sessao = c.req.query('checkout')
+    if (ligado) {
       try {
-        await sincronizarAssinatura(c.env, idParaConferir)
-        l = (await c.env.DB.prepare('SELECT * FROM lojas WHERE id = ?').bind(l.id).first<any>()) ?? l
+        if (sessao && /^cs_[\w]{8,200}$/.test(sessao)) await concluirCheckout(c.env, l, sessao)
+        else if (l.assinatura_id && Date.now() - Date.parse(l.atualizada_em) > 60_000) await sincronizarAssinatura(c.env, l.assinatura_id)
+        l = (await c.env.DB.prepare('SELECT * FROM lojas WHERE id = ?').bind(l.id).first<Loja>()) ?? l
         c.set('loja', l)
       } catch (e) {
-        console.error('[plano] sincronizar', e)
+        console.error('[plano] conferir no Stripe', e)
       }
     }
     const lista = await listarPlanos(c.env)
     const atual = await buscarPlano(c.env, l.plano_id)
     const s = situacaoDaAssinatura(l)
-    const assinante = s.tipo === 'assinante'
-    const cobrancaLigada = !!c.env.MP_ACCESS_TOKEN
-    const email = c.get('usuario').email
+    // Tem assinatura valendo (mesmo cancelada no fim do período): troca de plano, não assina de novo.
+    // Atrasada há mais de 14 dias também: o caminho é trocar o cartão, não abrir uma segunda assinatura.
+    const comAssinatura = s.tipo === 'assinante' || (s.tipo === 'cancelada' && l.assinatura_status !== 'canceled') || l.assinatura_status === 'past_due'
+    const noTesteDoStripe = l.assinatura_status === 'trialing'
 
     return tela(
       c,
@@ -166,9 +178,13 @@ export function rotasRecebimento(app: AppPainel) {
         <Cartao titulo="Situação">
           {s.tipo === 'assinante' && (
             <p>
-              <Etiqueta cor="verde">Assinatura ativa</Etiqueta> Plano <strong>{atual?.nome}</strong>, {atual ? reais(atual.preco_centavos) : ''}/mês
-              {l.assinatura_valida_ate ? ` · próxima cobrança em ${dataBR(l.assinatura_valida_ate)}` : ''}.
+              <Etiqueta cor={s.atrasada ? 'amarelo' : 'verde'}>{s.atrasada ? 'Pagamento atrasado' : 'Assinatura ativa'}</Etiqueta> Plano{' '}
+              <strong>{atual?.nome}</strong>, {atual ? reais(atual.preco_centavos) : ''}/mês
+              {l.assinatura_valida_ate ? ` · ${noTesteDoStripe ? 'primeira cobrança' : 'próxima cobrança'} em ${dataBR(l.assinatura_valida_ate)}` : ''}.
             </p>
+          )}
+          {s.tipo === 'assinante' && s.atrasada && (
+            <p class="aviso aviso--erro">O cartão foi recusado. O Stripe vai tentar de novo nos próximos dias — atualize o cartão para não perder a loja.</p>
           )}
           {s.tipo === 'teste' && (
             <p>
@@ -178,54 +194,60 @@ export function rotasRecebimento(app: AppPainel) {
           )}
           {s.tipo === 'cancelada' && (
             <p>
-              <Etiqueta cor="amarelo">Cancelada</Etiqueta> A loja fica no ar até {dataBR(s.ate)}. Assine de novo para não sair do ar.
+              <Etiqueta cor="amarelo">Cancelada</Etiqueta> A loja fica no ar até {dataBR(s.ate)} e a assinatura não renova.
             </p>
           )}
-          {s.tipo === 'vencida' && (
+          {s.tipo === 'vencida' && l.assinatura_status === 'past_due' && (
+            <p>
+              <Etiqueta cor="vermelho">Fora do ar</Etiqueta> A mensalidade está atrasada há mais de 14 dias. Atualize o cartão: assim que o Stripe conseguir cobrar, a loja
+              volta do jeito que estava.
+            </p>
+          )}
+          {s.tipo === 'vencida' && l.assinatura_status !== 'past_due' && (
             <p>
               <Etiqueta cor="vermelho">Fora do ar</Etiqueta> Assine um plano e a loja volta na hora, do jeito que estava.
             </p>
           )}
-          {l.assinatura_status === 'pending' && (
-            <p class="texto-suave">Há uma assinatura iniciada e ainda não confirmada. Se você já pagou, ela aparece aqui em alguns minutos.</p>
+          {!ligado && <p class="aviso aviso--erro">A cobrança das assinaturas ainda não foi ativada na plataforma.</p>}
+          {ligado && l.stripe_cliente_id && (
+            <p>
+              <Botao href="/painel/plano/cartao" tipo="secundario" pequeno>
+                Trocar cartão e ver faturas
+              </Botao>
+            </p>
           )}
-          {!cobrancaLigada && <p class="aviso aviso--erro">A cobrança das assinaturas ainda não foi ativada na plataforma.</p>}
         </Cartao>
 
-        <form method="post" action={assinante ? '/painel/plano/trocar' : '/painel/plano/assinar'} class="form">
-          {!assinante && cobrancaLigada && (
-            <Cartao>
-              <Campo
-                rotulo="E-mail da sua conta do Mercado Pago"
-                nome="email_pagador"
-                tipo="email"
-                valor={email}
-                obrigatorio
-                ajuda="A assinatura é cobrada no cartão pelo Mercado Pago. Use o e-mail com que você entra lá."
-              />
-            </Cartao>
-          )}
+        <form method="post" action={comAssinatura ? '/painel/plano/trocar' : '/painel/plano/assinar'}>
           <CartoesPlanos
             planos={lista}
             acao={(p) =>
-              assinante && atual?.id === p.id ? (
+              comAssinatura && atual?.id === p.id ? (
                 <span class="plano__atual">Seu plano</span>
               ) : (
-                <Botao nome="plano" valor={p.id} tipo={assinante ? 'secundario' : 'principal'}>
-                  {assinante ? `Mudar para ${p.nome}` : `Assinar ${p.nome}`}
+                <Botao nome="plano" valor={p.id} tipo={comAssinatura ? 'secundario' : 'principal'}>
+                  {comAssinatura ? `Mudar para ${p.nome}` : `Assinar ${p.nome}`}
                 </Botao>
               )
             }
           />
         </form>
+        {!comAssinatura && ligado && <p class="texto-suave">Pagamento no cartão de crédito, pelo ambiente seguro do Stripe. Cancele quando quiser.</p>}
 
-        {assinante && (
+        {s.tipo === 'assinante' && (
           <Cartao titulo="Cancelar">
-            <p class="texto-suave">A loja continua no ar até o fim do mês já pago. Depois sai do ar, mas nada é apagado: assinando de novo, volta igual.</p>
+            <p class="texto-suave">A loja continua no ar até o fim do período já pago. Depois sai do ar, mas nada é apagado: assinando de novo, volta igual.</p>
             <form method="post" action="/painel/plano/cancelar">
-              <Botao tipo="fantasma" pequeno confirmar="Cancelar a assinatura?">
+              <Botao tipo="fantasma" pequeno confirmar="Cancelar a assinatura? A loja fica no ar até o fim do período pago.">
                 Cancelar assinatura
               </Botao>
+            </form>
+          </Cartao>
+        )}
+        {s.tipo === 'cancelada' && comAssinatura && (
+          <Cartao titulo="Mudou de ideia?">
+            <form method="post" action="/painel/plano/reativar">
+              <Botao>Continuar assinando</Botao>
             </form>
           </Cartao>
         )}
@@ -234,44 +256,67 @@ export function rotasRecebimento(app: AppPainel) {
   })
 
   app.post('/plano/assinar', async (c) => {
-    const f = await c.req.parseBody()
-    const p = await buscarPlano(c.env, campo(f.plano, 40))
-    const email = campo(f.email_pagador, 200).toLowerCase() || c.get('usuario').email
-    if (!p || !p.ativo || !emailValido(email)) {
-      avisar(c, 'Escolha um plano e confira o e-mail.', 'erro')
+    const p = await buscarPlano(c.env, campo((await c.req.parseBody()).plano, 40))
+    if (!p || !p.ativo) {
+      avisar(c, 'Escolha um plano.', 'erro')
       return c.redirect('/painel/plano')
     }
     try {
-      const url = await iniciarAssinatura(c.env, c.get('loja'), p, email, `${c.env.APP_URL}/painel/plano`)
-      return c.redirect(url)
+      return c.redirect(await iniciarAssinatura(c.env, c.get('loja'), p, c.get('usuario').email, c.env.APP_URL))
     } catch (e) {
       console.error('[assinar]', e)
-      avisar(c, 'Não consegui abrir a assinatura no Mercado Pago agora. Tente de novo em instantes.', 'erro')
+      avisar(c, 'Não consegui abrir o pagamento agora. Tente de novo em instantes.', 'erro')
       return c.redirect('/painel/plano')
     }
   })
 
-  app.post('/plano/trocar', async (c) => {
-    const p = await buscarPlano(c.env, campo((await c.req.parseBody()).plano, 40))
-    if (!p || !p.ativo) return c.redirect('/painel/plano')
-    try {
-      await trocarPlano(c.env, c.get('loja'), p)
-      avisar(c, `Plano trocado para ${p.nome}. O novo valor vale a partir da próxima cobrança.`)
-    } catch (e) {
-      console.error('[trocar plano]', e)
-      avisar(c, 'Não consegui trocar o plano agora. Tente de novo.', 'erro')
-    }
-    return c.redirect('/painel/plano')
-  })
+  const acao = (caminho: string, fazer: (c: any) => Promise<string>, erro: string) =>
+    app.post(caminho, async (c) => {
+      try {
+        avisar(c, await fazer(c))
+      } catch (e) {
+        console.error(`[${caminho}]`, e)
+        avisar(c, erro, 'erro')
+      }
+      return c.redirect('/painel/plano')
+    })
 
-  app.post('/plano/cancelar', async (c) => {
-    try {
+  acao(
+    '/plano/trocar',
+    async (c) => {
+      const p = await buscarPlano(c.env, campo((await c.req.parseBody()).plano, 40))
+      if (!p || !p.ativo) return 'Escolha um plano.'
+      await trocarPlano(c.env, c.get('loja'), p)
+      return `Plano trocado para ${p.nome}. O novo valor vale a partir da próxima cobrança.`
+    },
+    'Não consegui trocar o plano agora. Tente de novo.',
+  )
+  acao(
+    '/plano/cancelar',
+    async (c) => {
       await cancelarAssinatura(c.env, c.get('loja'))
-      avisar(c, 'Assinatura cancelada. A loja fica no ar até o fim do período pago.')
+      return 'Assinatura cancelada. A loja fica no ar até o fim do período pago.'
+    },
+    'Não consegui cancelar agora. Tente de novo.',
+  )
+  acao(
+    '/plano/reativar',
+    async (c) => {
+      await reativarAssinatura(c.env, c.get('loja'))
+      return 'Pronto, a assinatura continua.'
+    },
+    'Não consegui reativar agora. Tente de novo.',
+  )
+
+  // Portal do Stripe: a lojista troca o cartão e baixa as faturas lá.
+  app.get('/plano/cartao', async (c) => {
+    try {
+      const url = await portalDeCobranca(c.env, c.get('loja'), c.env.APP_URL)
+      if (url) return c.redirect(url)
     } catch (e) {
-      console.error('[cancelar]', e)
-      avisar(c, 'Não consegui cancelar agora. Tente de novo.', 'erro')
+      console.error('[portal]', e)
     }
+    avisar(c, 'Não consegui abrir a página de cobrança agora. Tente de novo.', 'erro')
     return c.redirect('/painel/plano')
   })
 }

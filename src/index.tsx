@@ -20,6 +20,7 @@ import { renovarTokensVencendo } from './lib/conta-mp'
 import { reconciliarPendentes } from './lib/pedidos'
 import { reconciliarAssinaturas } from './lib/assinaturas'
 import { usarApiDeTeste } from './lib/mercadopago'
+import { usarStripeDeTeste } from './lib/stripe'
 
 const plataforma = new Hono<{ Bindings: Env }>()
 
@@ -65,6 +66,7 @@ function paraVitrine(req: Request, caminho: string, alvo: { slug?: string; domin
 export default {
   async fetch(req: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
     usarApiDeTeste(env.MP_API_TESTE)
+    usarStripeDeTeste(env.STRIPE_API_TESTE)
     const url = new URL(req.url)
 
     if (url.pathname.startsWith('/i/')) return servirImagem(env, url.pathname.slice(3), req)
@@ -90,6 +92,7 @@ export default {
 
   async scheduled(_evento: ScheduledController, env: Env, ctx: ExecutionContext): Promise<void> {
     usarApiDeTeste(env.MP_API_TESTE)
+    usarStripeDeTeste(env.STRIPE_API_TESTE)
     ctx.waitUntil(
       (async () => {
         const agora = new Date().toISOString()

@@ -23,9 +23,13 @@ Um Worker só serve tudo. Quem é a loja sai do endereço (`src/lib/dominio.ts`)
 Enquanto o domínio não estiver no Cloudflare, as lojas abrem pelo caminho:
 `…/loja/kiwi`.
 
-**Dinheiro.** Cada lojista conecta a própria conta do Mercado Pago, e a venda
-cai direto nela. A plataforma só cobra a mensalidade, por assinatura recorrente
-na conta da Lojinha Pronta (`MP_ACCESS_TOKEN`).
+**Dinheiro.** São dois caminhos que não se misturam:
+
+- **Venda das lojas → Mercado Pago da lojista.** Cada uma conecta a própria
+  conta, e a venda (Pix, cartão, boleto) cai direto nela.
+- **Mensalidade da plataforma → Stripe da Lojinha Pronta.** Assinatura no
+  cartão, com nova tentativa automática quando o cartão é recusado e um portal
+  onde a lojista troca o cartão e baixa as faturas.
 
 **Entrega.** O arquivo só é liberado depois de o Worker *consultar* o pagamento
 na API do Mercado Pago com o token da loja. O aviso (webhook) e a volta do
@@ -35,9 +39,10 @@ Se o aviso se perder, a própria página do pedido pergunta ao Mercado Pago
 enquanto espera, e o cron diário confere os pendentes.
 
 **Plano.** A loja nasce com 7 dias de teste grátis (sem cartão). Assinando
-durante o teste, a 1ª cobrança só acontece quando ele acaba. Cancelou: fica no
-ar até o fim do mês pago. Venceu: a vitrine mostra "voltamos logo", mas quem já
-comprou continua baixando.
+durante o teste, a 1ª cobrança só acontece quando ele acaba. Cartão recusado:
+o painel avisa e a loja segue no ar enquanto o Stripe tenta de novo — até 14
+dias. Cancelou: fica no ar até o fim do mês pago. Venceu: a vitrine mostra
+"voltamos logo", mas quem já comprou continua baixando.
 
 ## Pastas
 
@@ -47,12 +52,14 @@ comprou continua baixando.
 | `src/plataforma/` | apresentação com planos, cadastro, entrar, painel, `/admin` |
 | `src/loja/` | vitrine: início, categorias, produto, carrinho, pedido, páginas legais |
 | `src/lib/pedidos.ts` | pedido → Mercado Pago → confirmação → liberação |
-| `src/lib/assinaturas.ts` | mensalidade da plataforma |
+| `src/lib/assinaturas.ts` | mensalidade da plataforma (regras) |
+| `src/lib/stripe.ts` | cliente da API do Stripe e conferência dos avisos |
 | `src/lib/conta-mp.ts` | conta MP de cada lojista (token cifrado, renovação) |
 | `src/webhooks.ts` | avisos do Mercado Pago |
 | `migrations/` | esquema do banco (D1) e os planos iniciais |
 | `public/_lp/` | CSS e JS do painel e da vitrine |
-| `ferramentas/mp-falso.py` | Mercado Pago de mentira, para testar pagamento sem dinheiro |
+| `ferramentas/mp-falso.py` | Mercado Pago de mentira, para testar venda sem dinheiro |
+| `ferramentas/stripe-falso.py` | Stripe de mentira, para testar a mensalidade sem cartão |
 
 ## Rodar no computador
 
@@ -110,30 +117,62 @@ npm run deploy
 
 A plataforma fica em `https://lojinha-pronta.okaiquemota.workers.dev`.
 
-### 2. Mercado Pago
+### 2. Stripe (mensalidade)
+
+1. Crie a conta em [stripe.com](https://dashboard.stripe.com/register) e
+   ative-a com os dados da empresa e a conta bancária que recebe as
+   mensalidades.
+2. **Desenvolvedores → Chaves de API** → copie a chave secreta (`sk_live_…`):
+   ```bash
+   npx wrangler secret put STRIPE_SECRET_KEY
+   ```
+3. **Desenvolvedores → Webhooks → Adicionar destino**, URL
+   `<APP_URL>/webhooks/stripe`, com estes eventos:
+   `checkout.session.completed`, `customer.subscription.created`,
+   `customer.subscription.updated`, `customer.subscription.deleted`,
+   `invoice.paid`, `invoice.payment_failed`. Copie o segredo de assinatura
+   (`whsec_…`):
+   ```bash
+   npx wrangler secret put STRIPE_WEBHOOK_SECRET
+   ```
+4. **Configurações → Faturamento → Portal do cliente**: ative e salve, com
+   *atualizar forma de pagamento* e *histórico de faturas* ligados. **Deixe
+   desligado "trocar de plano"**: a troca é feita no painel da Lojinha Pronta,
+   que sabe o limite de produtos de cada plano.
+5. **Configurações → Faturamento → Assinaturas e e-mails → Gerenciar pagamentos
+   com falha**: ligue as novas tentativas inteligentes e escolha **cancelar a
+   assinatura** quando todas falharem. (Independente disso, a plataforma tira a
+   loja do ar com 14 dias de atraso.)
+
+Não precisa criar produto nem preço no Stripe: o preço de cada plano é criado
+sozinho na primeira assinatura. Cupons de desconto criados no Stripe já
+aparecem no checkout.
+
+Para testar antes de valer, use a chave `sk_test_…` e o cartão
+`4242 4242 4242 4242`; depois troque pela `sk_live_…`.
+
+### 3. Mercado Pago (vendas das lojistas)
+
+A plataforma não precisa de conta própria no Mercado Pago: cada lojista
+conecta a dela, e o aviso de pagamento vai em cada cobrança.
+
+O botão **"Conectar Mercado Pago"** (OAuth) é opcional, mas é bem mais fácil
+para a lojista do que copiar a chave de acesso. Para ligar:
 
 1. Em [Suas integrações](https://www.mercadopago.com.br/developers/panel/app),
-   crie uma aplicação **Pagamentos online → Checkout Pro**, na conta que recebe
-   as mensalidades.
-2. **Credenciais de produção** → copie o Access Token:
-   ```bash
-   npx wrangler secret put MP_ACCESS_TOKEN
-   ```
-3. **Webhooks**: URL `<APP_URL>/webhooks/mercadopago`, evento **Planos e
-   assinaturas**. É o que avisa quando uma mensalidade é paga ou cancelada.
-4. Para o botão "Conectar Mercado Pago" das lojistas (OAuth): na mesma
-   aplicação, cadastre a URL de redirecionamento
-   `<APP_URL>/painel/pagamentos/retorno` e guarde:
-   ```bash
+   crie uma aplicação **Pagamentos online → Checkout Pro**.
+2. Cadastre a URL de redirecionamento `<APP_URL>/painel/pagamentos/retorno`.
+3. ```bash
    npx wrangler secret put MP_CLIENT_ID
    ```
    ```bash
    npx wrangler secret put MP_CLIENT_SECRET
    ```
-   Sem isso, a lojista conecta colando o Access Token dela, com o passo a passo
-   na própria tela.
 
-### 3. E-mail (Resend)
+Sem isso, a lojista conecta colando o Access Token dela, com o passo a passo
+na própria tela.
+
+### 4. E-mail (Resend)
 
 Sem e-mail a loja vende e entrega do mesmo jeito: a página do pedido mostra os
 arquivos, e a lojista copia o link no painel. Com e-mail, a compradora recebe o
@@ -145,7 +184,7 @@ link, a lojista recebe "você vendeu" e "esqueci a senha" funciona.
    npx wrangler secret put RESEND_API_KEY
    ```
 
-### 4. Subdomínio de cada loja
+### 5. Subdomínio de cada loja
 
 O `*.lojinhapronta.com.br` precisa do DNS no Cloudflare, e hoje o domínio usa
 o DNS do Registro.br.
@@ -162,8 +201,8 @@ o DNS do Registro.br.
    responde por ele.
 6. `npm run deploy`. Os endereços antigos `/loja/<nome>` passam a redirecionar
    para o subdomínio.
-7. Atualize no Mercado Pago as URLs do webhook e do redirecionamento para o
-   novo `APP_URL`.
+7. Atualize para o novo `APP_URL` a URL do webhook no Stripe e a de
+   redirecionamento no Mercado Pago.
 
 ### Plano do Cloudflare
 
@@ -182,14 +221,22 @@ npx wrangler d1 execute DB --remote --command "UPDATE planos SET preco_centavos 
 
 Assinaturas já ativas continuam com o valor antigo até a lojista mudar de plano.
 
-## Testar o pagamento sem dinheiro
+## Testar pagamento sem dinheiro
+
+Dois simuladores, um para cada lado do dinheiro:
 
 ```bash
 python3 ferramentas/mp-falso.py
 ```
 
-Com `MP_API_TESTE=http://127.0.0.1:9999` no `.dev.vars`, o Worker conversa
-com esse Mercado Pago de mentira. Para simular a compradora pagando:
+```bash
+python3 ferramentas/stripe-falso.py
+```
+
+Com `MP_API_TESTE`, `STRIPE_API_TESTE` e os segredos de teste no `.dev.vars`
+(veja `.dev.vars.exemplo`), o Worker conversa com eles.
+
+Venda de uma loja — a compradora paga e o Mercado Pago avisa:
 
 ```bash
 curl -X POST http://127.0.0.1:9999/_pagar -d '{"id": 1}'
@@ -197,6 +244,13 @@ curl -X POST http://127.0.0.1:9999/_pagar -d '{"id": 1}'
 
 ```bash
 curl -X POST "http://localhost:8787/webhooks/mercadopago?loja=<id-da-loja>" -d '{"type":"payment","data":{"id":"1"}}'
+```
+
+Mensalidade — a lojista conclui o checkout do Stripe (o `cs_…` está no
+endereço para onde o painel mandou):
+
+```bash
+curl -X POST http://127.0.0.1:9998/_completar -H 'Content-Type: application/json' -d '{"id": "cs_test_..."}'
 ```
 
 ## Próximos passos

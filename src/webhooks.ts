@@ -1,19 +1,21 @@
 /**
- * Avisos do Mercado Pago.
+ * Avisos de pagamento.
  *
- *   /webhooks/mercadopago?loja=<id>   venda de uma loja (vem na preferência)
- *   /webhooks/mercadopago             assinatura da plataforma (cadastrado no painel do MP)
+ *   /webhooks/mercadopago?loja=<id>   venda de uma loja (o endereço vai em cada cobrança)
+ *   /webhooks/stripe                  mensalidade da plataforma (cadastrado no painel do Stripe)
  *
- * O corpo do aviso nunca é levado em conta como verdade: ele só diz QUAL
- * recurso olhar. A resposta vem sempre da consulta à API.
+ * Nenhum corpo de aviso é prova de nada. O do Mercado Pago só diz QUAL
+ * pagamento olhar, e a resposta vem da consulta à API. O do Stripe tem a
+ * assinatura HMAC conferida e, mesmo assim, a assinatura é consultada de novo.
  */
 import { Hono } from 'hono'
 import type { Env, Pedido } from './tipos'
 import { agora } from './lib/formato'
-import { buscarCobrancaDeAssinatura, buscarPagamento } from './lib/mercadopago'
+import { buscarPagamento } from './lib/mercadopago'
 import { contaDaLoja } from './lib/conta-mp'
 import { sincronizarPedido } from './lib/pedidos'
-import { sincronizarAssinatura } from './lib/assinaturas'
+import { tratarAvisoStripe } from './lib/assinaturas'
+import { assinaturaDoAvisoValida } from './lib/stripe'
 
 const app = new Hono<{ Bindings: Env }>()
 
@@ -56,13 +58,6 @@ app.post('/mercadopago', async (c) => {
             resultado = `pedido ${pedido.numero}: ${novo.status} (${pg.status})`
           }
         }
-      } else if (!lojaId && id && (tipo === 'subscription_preapproval' || tipo === 'preapproval')) {
-        const a = await sincronizarAssinatura(env, id)
-        resultado = a ? `assinatura ${a.status}` : 'assinatura sem loja'
-      } else if (!lojaId && id && tipo === 'subscription_authorized_payment') {
-        const cobranca = await buscarCobrancaDeAssinatura(env.MP_ACCESS_TOKEN!, id)
-        const a = await sincronizarAssinatura(env, cobranca.preapproval_id)
-        resultado = `cobrança ${cobranca.status} → assinatura ${a?.status}`
       }
     } catch (e) {
       resultado = `erro: ${(e as Error).message}`
@@ -74,6 +69,29 @@ app.post('/mercadopago', async (c) => {
   // Responde rápido: o Mercado Pago reenvia se demorar. O trabalho continua depois.
   c.executionCtx.waitUntil(trabalho)
   return c.text('ok')
+})
+
+app.post('/stripe', async (c) => {
+  const corpo = await c.req.text()
+  const segredo = c.env.STRIPE_WEBHOOK_SECRET
+  if (!segredo || !(await assinaturaDoAvisoValida(segredo, c.req.header('stripe-signature'), corpo))) {
+    return c.text('assinatura inválida', 400)
+  }
+  const evento = JSON.parse(corpo)
+  const env = c.env
+  c.executionCtx.waitUntil(
+    (async () => {
+      let resultado: string
+      try {
+        resultado = await tratarAvisoStripe(env, evento)
+      } catch (e) {
+        resultado = `erro: ${(e as Error).message}`
+        console.error('[webhook stripe]', e)
+      }
+      await registrar(env, 'stripe', evento.type ?? null, evento.data?.object?.id ?? null, corpo, resultado)
+    })(),
+  )
+  return c.json({ recebido: true })
 })
 
 // Alguns avisos antigos chegam por GET.
