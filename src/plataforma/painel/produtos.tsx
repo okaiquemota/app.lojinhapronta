@@ -1,0 +1,527 @@
+import type { AppPainel, Ctx } from './comum'
+import { tela } from './comum'
+import { AreaTexto, Botao, Campo, Cartao, Etiqueta, Marcador, Selecao, Vazio, avisar } from '../ui'
+import type { Aviso } from '../ui'
+import type { Categoria, Produto } from '../../tipos'
+import { agora, campo, centavosDeTexto, centavosParaCampo, lista, reais, slugificar, tamanhoArquivo } from '../../lib/formato'
+import { gerarId } from '../../lib/seguranca'
+import { apagar, arquivoDaLoja, arquivoEnviado, enviarArquivoDireto, guardarArquivo, guardarImagem } from '../../lib/arquivos'
+import { contarProdutosAtivos, limiteDeProdutos, urlImagem } from '../../lib/lojas'
+import { urlDaLoja } from '../../lib/dominio'
+
+async function categoriasDa(c: Ctx): Promise<Categoria[]> {
+  const r = await c.env.DB.prepare('SELECT * FROM categorias WHERE loja_id = ? ORDER BY ordem, nome').bind(c.get('loja').id).all<Categoria>()
+  return r.results
+}
+
+async function produtoDa(c: Ctx, id: string): Promise<Produto | null> {
+  return c.env.DB.prepare('SELECT * FROM produtos WHERE id = ? AND loja_id = ?').bind(id, c.get('loja').id).first<Produto>()
+}
+
+async function slugLivre(c: Ctx, nome: string): Promise<string> {
+  const base = slugificar(nome) || 'produto'
+  let s = base
+  for (let i = 2; await c.env.DB.prepare('SELECT 1 FROM produtos WHERE loja_id = ? AND slug = ?').bind(c.get('loja').id, s).first(); i++) {
+    s = `${base}-${i}`
+  }
+  return s
+}
+
+// ── lista ──────────────────────────────────────────────────────────────────
+
+function Lista({ c, produtos, categorias, q }: { c: Ctx; produtos: Produto[]; categorias: Categoria[]; q: string }) {
+  const nomeCat = new Map(categorias.map((k) => [k.id, k.nome]))
+  const base = urlDaLoja(c.env, c.get('loja'))
+  if (!produtos.length && !q) {
+    return (
+      <Cartao>
+        <Vazio titulo="Nenhum produto ainda">
+          <p>Cadastre o primeiro: nome, preço, uma foto e o arquivo que a cliente recebe depois de pagar.</p>
+          <Botao href="/painel/produtos/novo">Cadastrar produto</Botao>
+        </Vazio>
+      </Cartao>
+    )
+  }
+  return (
+    <Cartao>
+      <form class="busca-painel" method="get">
+        <input type="search" name="q" value={q} placeholder="Buscar produto" aria-label="Buscar produto" />
+      </form>
+      <ul class="lista-produtos">
+        {produtos.map((p) => {
+          const capa = lista(p.imagens)[0]
+          return (
+            <li>
+              <a href={`/painel/produtos/${p.id}`} class="lista-produtos__item">
+                <span class="miniatura">{capa ? <img src={urlImagem(capa)} alt="" loading="lazy" /> : <span>sem foto</span>}</span>
+                <span class="lista-produtos__info">
+                  <strong>{p.nome}</strong>
+                  <small>
+                    {p.categoria_id ? nomeCat.get(p.categoria_id) : 'Sem categoria'}
+                    {p.arquivo_nome ? ` · ${p.arquivo_nome}` : ''}
+                  </small>
+                </span>
+                <span class="lista-produtos__preco">{p.preco_centavos === 0 ? 'Grátis' : reais(p.preco_centavos)}</span>
+                <span class="lista-produtos__estado">
+                  {p.arquivado ? (
+                    <Etiqueta>Arquivado</Etiqueta>
+                  ) : p.ativo ? (
+                    <Etiqueta cor="verde">À venda</Etiqueta>
+                  ) : !p.arquivo_key ? (
+                    <Etiqueta cor="amarelo">Falta o arquivo</Etiqueta>
+                  ) : (
+                    <Etiqueta>Escondido</Etiqueta>
+                  )}
+                </span>
+              </a>
+              {p.ativo && !p.arquivado ? (
+                <a class="lista-produtos__ver" href={`${base}/produto/${p.slug}`} target="_blank" rel="noopener">
+                  ver na loja
+                </a>
+              ) : null}
+            </li>
+          )
+        })}
+      </ul>
+      {!produtos.length && <p class="texto-suave">Nada encontrado para “{q}”.</p>}
+    </Cartao>
+  )
+}
+
+// ── formulário ─────────────────────────────────────────────────────────────
+
+type Valores = {
+  nome: string
+  preco: string
+  preco_de: string
+  categoria_id: string
+  resumo: string
+  descricao: string
+  limite_downloads: string
+  ativo: boolean
+  destaque: boolean
+}
+
+function valoresDe(p?: Produto | null): Valores {
+  return {
+    nome: p?.nome ?? '',
+    preco: p ? centavosParaCampo(p.preco_centavos) : '',
+    preco_de: centavosParaCampo(p?.preco_de_centavos),
+    categoria_id: p?.categoria_id ?? '',
+    resumo: p?.resumo ?? '',
+    descricao: p?.descricao ?? '',
+    limite_downloads: p ? (p.limite_downloads == null ? '' : String(p.limite_downloads)) : '5',
+    ativo: p ? !!p.ativo : true,
+    destaque: !!p?.destaque,
+  }
+}
+
+function Formulario({ produto, v, categorias, erros }: { produto?: Produto | null; v: Valores; categorias: Categoria[]; erros: Record<string, string> }) {
+  const imagens = lista(produto?.imagens)
+  return (
+    <form method="post" enctype="multipart/form-data" class="form form--produto" data-enviando="Salvando…" data-envio-direto="/painel/arquivos">
+      <div class="grade-produto">
+        <div class="grade-produto__principal">
+          <Cartao titulo="O produto">
+            <Campo rotulo="Nome" nome="nome" valor={v.nome} obrigatorio max={120} erro={erros.nome} placeholder="Ex.: Alfabeto ilustrado · 42 páginas" />
+            <div class="linha-campos">
+              <Campo rotulo="Preço" nome="preco" valor={v.preco} obrigatorio prefixo="R$" modo="decimal" placeholder="19,90" erro={erros.preco} ajuda="0 para material grátis." />
+              <Campo rotulo="Preço antigo (opcional)" nome="preco_de" valor={v.preco_de} prefixo="R$" modo="decimal" placeholder="29,90" ajuda="Aparece riscado ao lado do preço." />
+            </div>
+            <Selecao
+              rotulo="Categoria"
+              nome="categoria_id"
+              valor={v.categoria_id}
+              opcoes={[{ valor: '', texto: 'Sem categoria' }, ...categorias.map((k) => ({ valor: k.id, texto: k.nome }))]}
+              ajuda={
+                <>
+                  <a href="/painel/categorias">Criar ou editar categorias</a>
+                </>
+              }
+            />
+            <Campo rotulo="Resumo" nome="resumo" valor={v.resumo} max={200} placeholder="Uma frase que aparece perto do preço" />
+            <AreaTexto
+              rotulo="Descrição"
+              nome="descricao"
+              valor={v.descricao}
+              linhas={9}
+              max={6000}
+              ajuda="Linha em branco separa parágrafos. Comece a linha com “- ” para fazer lista e com “## ” para um subtítulo."
+            />
+          </Cartao>
+
+          <Cartao titulo="Fotos">
+            {imagens.length > 0 && (
+              <ul class="galeria-edicao">
+                {imagens.map((k, i) => (
+                  <li>
+                    <img src={urlImagem(k)} alt="" />
+                    {i === 0 && <span class="galeria-edicao__capa">capa</span>}
+                    <label class="galeria-edicao__remover">
+                      <input type="checkbox" name="remover_imagem" value={k} /> remover
+                    </label>
+                  </li>
+                ))}
+              </ul>
+            )}
+            <div class="campo">
+              <label for="c-imagens">{imagens.length ? 'Adicionar fotos' : 'Fotos do produto'}</label>
+              <input id="c-imagens" type="file" name="imagens" accept="image/jpeg,image/png,image/webp" multiple data-reduzir-imagem />
+              <p class="campo__ajuda">A primeira vira a capa. Quadrada fica melhor na vitrine. JPG, PNG ou WEBP.</p>
+            </div>
+          </Cartao>
+        </div>
+
+        <div class="grade-produto__lateral">
+          <Cartao titulo="Arquivo entregue">
+            {produto?.arquivo_key ? (
+              <p class="arquivo-atual">
+                <strong>{produto.arquivo_nome}</strong>
+                <small>{tamanhoArquivo(produto.arquivo_tamanho)}</small>
+              </p>
+            ) : (
+              <p class="texto-suave">É o que a cliente baixa depois de pagar. Sem arquivo, o produto não vai para a vitrine.</p>
+            )}
+            <div class={`campo${erros.arquivo ? ' campo--erro' : ''}`}>
+              <label for="c-arquivo">{produto?.arquivo_key ? 'Trocar arquivo' : 'Enviar arquivo'}</label>
+              <input id="c-arquivo" type="file" name="arquivo" accept=".pdf,.zip,.rar,.png,.jpg,.jpeg,.docx,.xlsx,.pptx,.mp3,.mp4,.epub" data-direto />
+              <input type="hidden" name="arquivo_key" value="" />
+              {erros.arquivo && <p class="campo__erro">{erros.arquivo}</p>}
+              <p class="campo__ajuda">PDF, ZIP, imagem ou planilha, até 95 MB. Quem já comprou recebe a versão nova.</p>
+            </div>
+            <Campo
+              rotulo="Limite de downloads por compra"
+              nome="limite_downloads"
+              valor={v.limite_downloads}
+              tipo="number"
+              min={1}
+              modo="numeric"
+              ajuda="Vazio = sem limite. Um limite baixo desencoraja repassar o link."
+            />
+          </Cartao>
+
+          <Cartao titulo="Na vitrine">
+            <Marcador nome="ativo" marcado={v.ativo} rotulo="À venda" ajuda="Desmarque para esconder sem apagar." />
+            <Marcador nome="destaque" marcado={v.destaque} rotulo="Destaque" ajuda="Aparece primeiro na página inicial." />
+            {erros.ativo && <p class="campo__erro">{erros.ativo}</p>}
+          </Cartao>
+
+          <div class="acoes-form">
+            <Botao>Salvar produto</Botao>
+          </div>
+        </div>
+      </div>
+    </form>
+  )
+}
+
+/** Lê o formulário, sobe arquivos e grava. Devolve erros para redesenhar a tela. */
+async function salvar(c: Ctx, existente: Produto | null): Promise<{ ok: true; id: string; aviso: string } | { ok: false; v: Valores; erros: Record<string, string> }> {
+  const loja = c.get('loja')
+  const f = await c.req.parseBody({ all: true })
+  const um = (k: string) => (Array.isArray(f[k]) ? (f[k] as any[])[0] : f[k])
+  const v: Valores = {
+    nome: campo(um('nome'), 120),
+    preco: campo(um('preco'), 20),
+    preco_de: campo(um('preco_de'), 20),
+    categoria_id: campo(um('categoria_id'), 60),
+    resumo: campo(um('resumo'), 200),
+    descricao: campo(um('descricao'), 6000),
+    limite_downloads: campo(um('limite_downloads'), 6),
+    ativo: !!um('ativo'),
+    destaque: !!um('destaque'),
+  }
+  const erros: Record<string, string> = {}
+  if (v.nome.length < 2) erros.nome = 'Dê um nome ao produto.'
+  const preco = centavosDeTexto(v.preco)
+  if (preco === null) erros.preco = 'Preço inválido. Use o formato 19,90.'
+  else if (preco > 0 && preco < 100) erros.preco = 'O Mercado Pago não aceita cobrança abaixo de R$ 1,00. Use 0 para grátis.'
+  const precoDe = v.preco_de ? centavosDeTexto(v.preco_de) : null
+  const limite = v.limite_downloads ? Math.max(1, Math.min(999, Number(v.limite_downloads) || 0)) : null
+
+  let categoriaId: string | null = null
+  if (v.categoria_id) {
+    const k = await c.env.DB.prepare('SELECT id FROM categorias WHERE id = ? AND loja_id = ?').bind(v.categoria_id, loja.id).first<{ id: string }>()
+    categoriaId = k?.id ?? null
+  }
+  if (Object.keys(erros).length) return { ok: false, v, erros }
+
+  // arquivos
+  const novasImagens: string[] = []
+  let arquivo: { key: string; nome: string; tamanho: number } | null = null
+  try {
+    const imgs = (Array.isArray(f.imagens) ? f.imagens : [f.imagens]).map(arquivoEnviado).filter((x): x is File => !!x)
+    for (const img of imgs.slice(0, 10)) novasImagens.push(await guardarImagem(c.env, loja.id, img))
+    const direto = typeof um('arquivo_key') === 'string' ? String(um('arquivo_key')) : ''
+    const arq = arquivoEnviado(um('arquivo'))
+    if (direto) {
+      arquivo = await arquivoDaLoja(c.env, loja.id, direto)
+      if (!arquivo) throw new Error('O envio do arquivo não terminou. Tente de novo.')
+    } else if (arq) arquivo = await guardarArquivo(c.env, loja.id, arq)
+  } catch (e) {
+    await apagar(c.env, ...novasImagens, arquivo?.key)
+    return { ok: false, v, erros: { arquivo: (e as Error).message } }
+  }
+
+  const remover = new Set((Array.isArray(f.remover_imagem) ? f.remover_imagem : [f.remover_imagem]).filter((x): x is string => typeof x === 'string'))
+  const anteriores = lista(existente?.imagens)
+  const imagens = [...anteriores.filter((k) => !remover.has(k)), ...novasImagens].slice(0, 12)
+  const temArquivo = !!(arquivo || existente?.arquivo_key)
+
+  // Ficar à venda exige arquivo e caber no plano.
+  let ativo = v.ativo
+  let aviso = existente ? 'Produto salvo.' : 'Produto cadastrado.'
+  if (ativo && !temArquivo) {
+    ativo = false
+    aviso = 'Produto salvo, mas escondido: envie o arquivo para colocá-lo à venda.'
+  }
+  if (ativo && !existente?.ativo) {
+    const limiteP = await limiteDeProdutos(c.env, loja)
+    if (limiteP !== null && (await contarProdutosAtivos(c.env, loja.id)) >= limiteP) {
+      ativo = false
+      aviso = `Produto salvo, mas escondido: seu plano permite ${limiteP} produtos à venda. Mude de plano para vender mais.`
+    }
+  }
+
+  const t = agora()
+  const id = existente?.id ?? gerarId()
+  if (existente) {
+    await c.env.DB.prepare(
+      `UPDATE produtos SET nome = ?, categoria_id = ?, resumo = ?, descricao = ?, preco_centavos = ?, preco_de_centavos = ?, imagens = ?,
+         arquivo_key = ?, arquivo_nome = ?, arquivo_tamanho = ?, limite_downloads = ?, ativo = ?, destaque = ?, arquivado = 0, atualizado_em = ?
+       WHERE id = ? AND loja_id = ?`,
+    )
+      .bind(
+        v.nome,
+        categoriaId,
+        v.resumo,
+        v.descricao,
+        preco,
+        precoDe,
+        JSON.stringify(imagens),
+        arquivo?.key ?? existente.arquivo_key,
+        arquivo?.nome ?? existente.arquivo_nome,
+        arquivo?.tamanho ?? existente.arquivo_tamanho,
+        limite,
+        ativo ? 1 : 0,
+        v.destaque ? 1 : 0,
+        t,
+        id,
+        loja.id,
+      )
+      .run()
+    // A imagem removida sai do R2. O arquivo antigo fica: pedidos antigos ainda o
+    // têm guardado como cópia, e o de agora passa a valer para todos.
+    await apagar(c.env, ...anteriores.filter((k) => remover.has(k)))
+  } else {
+    await c.env.DB.prepare(
+      `INSERT INTO produtos (id, loja_id, categoria_id, nome, slug, resumo, descricao, preco_centavos, preco_de_centavos, imagens,
+         arquivo_key, arquivo_nome, arquivo_tamanho, limite_downloads, ativo, destaque, criado_em, atualizado_em)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    )
+      .bind(
+        id,
+        loja.id,
+        categoriaId,
+        v.nome,
+        await slugLivre(c, v.nome),
+        v.resumo,
+        v.descricao,
+        preco,
+        precoDe,
+        JSON.stringify(imagens),
+        arquivo?.key ?? null,
+        arquivo?.nome ?? null,
+        arquivo?.tamanho ?? null,
+        limite,
+        ativo ? 1 : 0,
+        v.destaque ? 1 : 0,
+        t,
+        t,
+      )
+      .run()
+  }
+  return { ok: true, id, aviso }
+}
+
+export function rotasProdutos(app: AppPainel) {
+  // Envio direto do arquivo do produto (o JS do painel chama antes de salvar).
+  app.put('/arquivos', async (c) => {
+    try {
+      const nome = decodeURIComponent(c.req.header('x-nome-arquivo') ?? 'arquivo.pdf').slice(0, 200)
+      return c.json(await enviarArquivoDireto(c.env, c.get('loja').id, c.req.raw, nome))
+    } catch (e) {
+      return c.json({ erro: (e as Error).message }, 400)
+    }
+  })
+
+  app.get('/produtos', async (c) => {
+    const q = campo(c.req.query('q'), 80)
+    const loja = c.get('loja')
+    const r = q
+      ? await c.env.DB.prepare('SELECT * FROM produtos WHERE loja_id = ? AND nome LIKE ? ORDER BY arquivado, criado_em DESC LIMIT 200')
+          .bind(loja.id, `%${q.replace(/[%_]/g, '')}%`)
+          .all<Produto>()
+      : await c.env.DB.prepare('SELECT * FROM produtos WHERE loja_id = ? ORDER BY arquivado, criado_em DESC LIMIT 500').bind(loja.id).all<Produto>()
+    const categorias = await categoriasDa(c)
+    return tela(
+      c,
+      { ativo: 'produtos', titulo: 'Produtos', acoes: <Botao href="/painel/produtos/novo" pequeno>+ Novo produto</Botao> },
+      <Lista c={c} produtos={r.results} categorias={categorias} q={q} />,
+    )
+  })
+
+  app.get('/produtos/novo', async (c) => {
+    return tela(
+      c,
+      { ativo: 'produtos', titulo: 'Novo produto', voltar: { href: '/painel/produtos', texto: 'Produtos' } },
+      <Formulario v={valoresDe(null)} categorias={await categoriasDa(c)} erros={{}} />,
+    )
+  })
+
+  app.post('/produtos/novo', async (c) => {
+    const r = await salvar(c, null)
+    if (!r.ok) {
+      return tela(
+        c,
+        { ativo: 'produtos', titulo: 'Novo produto', voltar: { href: '/painel/produtos', texto: 'Produtos' }, aviso: erroGeral, status: 422 },
+        <Formulario v={r.v} categorias={await categoriasDa(c)} erros={r.erros} />,
+      )
+    }
+    avisar(c, r.aviso, r.aviso.includes('escondido') ? 'erro' : 'ok')
+    return c.redirect(`/painel/produtos/${r.id}`)
+  })
+
+  app.get('/produtos/:id', async (c) => {
+    const p = await produtoDa(c, c.req.param('id'))
+    if (!p) return c.notFound()
+    return tela(
+      c,
+      {
+        ativo: 'produtos',
+        titulo: p.nome,
+        voltar: { href: '/painel/produtos', texto: 'Produtos' },
+        acoes: (
+          <form method="post" action={`/painel/produtos/${p.id}/excluir`}>
+            <Botao tipo="fantasma" pequeno confirmar="Excluir este produto? Se ele já foi vendido, ele é arquivado e quem comprou continua baixando.">
+              Excluir
+            </Botao>
+          </form>
+        ),
+      },
+      <Formulario produto={p} v={valoresDe(p)} categorias={await categoriasDa(c)} erros={{}} />,
+    )
+  })
+
+  app.post('/produtos/:id', async (c) => {
+    const p = await produtoDa(c, c.req.param('id'))
+    if (!p) return c.notFound()
+    const r = await salvar(c, p)
+    if (!r.ok) {
+      return tela(
+        c,
+        { ativo: 'produtos', titulo: p.nome, voltar: { href: '/painel/produtos', texto: 'Produtos' }, aviso: erroGeral, status: 422 },
+        <Formulario produto={p} v={r.v} categorias={await categoriasDa(c)} erros={r.erros} />,
+      )
+    }
+    avisar(c, r.aviso, r.aviso.includes('escondido') ? 'erro' : 'ok')
+    return c.redirect(`/painel/produtos/${p.id}`)
+  })
+
+  app.post('/produtos/:id/excluir', async (c) => {
+    const p = await produtoDa(c, c.req.param('id'))
+    if (!p) return c.notFound()
+    const vendido = await c.env.DB.prepare('SELECT 1 FROM pedido_itens WHERE produto_id = ? LIMIT 1').bind(p.id).first()
+    if (vendido) {
+      // Já vendido: some da vitrine, mas o arquivo continua para quem comprou.
+      await c.env.DB.prepare('UPDATE produtos SET ativo = 0, destaque = 0, arquivado = 1, atualizado_em = ? WHERE id = ?').bind(agora(), p.id).run()
+      avisar(c, 'Produto arquivado. Ele saiu da loja, e quem já comprou continua baixando.')
+    } else {
+      await c.env.DB.prepare('DELETE FROM produtos WHERE id = ?').bind(p.id).run()
+      await apagar(c.env, ...lista(p.imagens), p.arquivo_key)
+      avisar(c, 'Produto excluído.')
+    }
+    return c.redirect('/painel/produtos')
+  })
+
+  // ── categorias ───────────────────────────────────────────────────────────
+
+  app.get('/categorias', async (c) => {
+    const cats = await categoriasDa(c)
+    const contagem = await c.env.DB.prepare('SELECT categoria_id, COUNT(*) AS n FROM produtos WHERE loja_id = ? AND arquivado = 0 GROUP BY categoria_id')
+      .bind(c.get('loja').id)
+      .all<{ categoria_id: string; n: number }>()
+    const n = new Map(contagem.results.map((r) => [r.categoria_id, r.n]))
+    return tela(
+      c,
+      { ativo: 'categorias', titulo: 'Categorias' },
+      <>
+        <Cartao titulo="Nova categoria">
+          <form method="post" action="/painel/categorias" class="form form--linha">
+            <Campo rotulo="Nome" nome="nome" obrigatorio max={60} placeholder="Ex.: Alfabetização" />
+            <Botao>Criar</Botao>
+          </form>
+        </Cartao>
+        <Cartao titulo="Suas categorias">
+          {cats.length ? (
+            <ul class="lista-categorias">
+              {cats.map((k) => (
+                <li>
+                  <form method="post" action={`/painel/categorias/${k.id}`} class="form form--linha">
+                    <input name="nome" value={k.nome} maxlength={60} aria-label="Nome da categoria" required />
+                    <input name="ordem" value={String(k.ordem)} type="number" class="campo-ordem" aria-label="Ordem" title="Ordem na loja" />
+                    <span class="texto-suave">{n.get(k.id) ?? 0} produtos</span>
+                    <Botao tipo="secundario" pequeno>
+                      Salvar
+                    </Botao>
+                    <Botao tipo="fantasma" pequeno nome="excluir" valor="1" confirmar="Excluir a categoria? Os produtos dela ficam sem categoria.">
+                      Excluir
+                    </Botao>
+                  </form>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p class="texto-suave">Categorias organizam a vitrine — “Alfabetização”, “Datas comemorativas”, “Moldes”. Aparecem na página inicial da loja.</p>
+          )}
+        </Cartao>
+      </>,
+    )
+  })
+
+  app.post('/categorias', async (c) => {
+    const nome = campo((await c.req.parseBody()).nome, 60)
+    const loja = c.get('loja')
+    if (nome.length < 2) {
+      avisar(c, 'Dê um nome à categoria.', 'erro')
+      return c.redirect('/painel/categorias')
+    }
+    let slug = slugificar(nome) || 'categoria'
+    if (await c.env.DB.prepare('SELECT 1 FROM categorias WHERE loja_id = ? AND slug = ?').bind(loja.id, slug).first()) slug = `${slug}-${Date.now() % 10000}`
+    const ordem = await c.env.DB.prepare('SELECT COALESCE(MAX(ordem),0)+1 AS o FROM categorias WHERE loja_id = ?').bind(loja.id).first<{ o: number }>()
+    await c.env.DB.prepare('INSERT INTO categorias (id, loja_id, nome, slug, ordem) VALUES (?, ?, ?, ?, ?)').bind(gerarId(), loja.id, nome, slug, ordem?.o ?? 1).run()
+    avisar(c, `Categoria “${nome}” criada.`)
+    return c.redirect('/painel/categorias')
+  })
+
+  app.post('/categorias/:id', async (c) => {
+    const f = await c.req.parseBody()
+    const loja = c.get('loja')
+    const id = c.req.param('id')
+    if (f.excluir) {
+      await c.env.DB.prepare('DELETE FROM categorias WHERE id = ? AND loja_id = ?').bind(id, loja.id).run()
+      avisar(c, 'Categoria excluída.')
+    } else {
+      const nome = campo(f.nome, 60)
+      if (nome.length >= 2) {
+        await c.env.DB.prepare('UPDATE categorias SET nome = ?, ordem = ? WHERE id = ? AND loja_id = ?')
+          .bind(nome, Number(f.ordem) || 0, id, loja.id)
+          .run()
+        avisar(c, 'Categoria salva.')
+      }
+    }
+    return c.redirect('/painel/categorias')
+  })
+}
+
+const erroGeral: Aviso = { tipo: 'erro', texto: 'Confira os campos marcados.' }

@@ -1,0 +1,13 @@
+# Copie para .dev.vars (que não vai para o git) e rode `npm run dev`.
+SEGREDO_APP=troque-por-um-texto-aleatorio-de-pelo-menos-32-caracteres
+APP_URL=http://localhost:8787
+ADMIN_EMAILS=voce@exemplo.com
+
+# Para testar venda e mensalidade sem dinheiro de verdade, rode
+#   python3 ferramentas/mp-falso.py
+#   python3 ferramentas/stripe-falso.py
+# e descomente:
+# MP_API_TESTE=http://127.0.0.1:9999
+# STRIPE_API_TESTE=http://127.0.0.1:9998
+# STRIPE_SECRET_KEY=sk_test_falso
+# STRIPE_WEBHOOK_SECRET=whsec_segredo_de_teste
