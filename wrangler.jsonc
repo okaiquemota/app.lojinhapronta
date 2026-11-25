@@ -5,16 +5,15 @@
   "compatibility_date": "2026-11-01",
   "compatibility_flags": ["nodejs_compat"],
 
-  // CSS, JS e ícones. Servidos direto pela borda, sem passar pelo Worker.
-  // Tudo mora em /_lp/ para não colidir com o endereço de nenhuma página de loja.
-  "assets": { "directory": "./public" },
+  // CSS, JS e ícones de public/_lp/ entram no Worker como texto (src/estaticos.ts)
+  // e saem em /_lp/, um caminho que não colide com nenhuma página de loja.
+  "rules": [{ "type": "Text", "globs": ["**/*.css", "**/*.js.txt", "**/*.svg"], "fallthrough": true }],
 
   "d1_databases": [
     {
       "binding": "DB",
       "database_name": "lojinha-pronta",
-      // Preencher com o id devolvido por `wrangler d1 create lojinha-pronta`.
-      "database_id": "00000000-0000-0000-0000-000000000000",
+      "database_id": "ae325290-165f-4ad1-a7ee-d364848d2ef4",
       "migrations_dir": "migrations"
     }
   ],

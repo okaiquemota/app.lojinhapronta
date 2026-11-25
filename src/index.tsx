@@ -6,6 +6,7 @@
  *   dominiodaloja.com.br            vitrine da loja (domínio próprio)
  *   …/loja/<slug>/…                 vitrine pelo caminho, enquanto não há DNS
  *   …/i/<loja>/<arquivo>            imagens públicas, em qualquer endereço
+ *   …/_lp/<arquivo>                 CSS, JS e ícones, em qualquer endereço
  */
 import { Hono } from 'hono'
 import type { Env } from './tipos'
@@ -16,6 +17,7 @@ import webhooks from './webhooks'
 import vitrine from './loja'
 import { resolverHost } from './lib/dominio'
 import { servirImagem } from './lib/arquivos'
+import { servirEstatico } from './estaticos'
 import { renovarTokensVencendo } from './lib/conta-mp'
 import { reconciliarPendentes } from './lib/pedidos'
 import { reconciliarAssinaturas } from './lib/assinaturas'
@@ -69,6 +71,7 @@ export default {
     usarStripeDeTeste(env.STRIPE_API_TESTE)
     const url = new URL(req.url)
 
+    if (url.pathname.startsWith('/_lp/')) return servirEstatico(url.pathname.slice(5))
     if (url.pathname.startsWith('/i/')) return servirImagem(env, url.pathname.slice(3), req)
 
     const alvo = resolverHost(url.hostname, env)

@@ -57,7 +57,7 @@ dias. Cancelou: fica no ar até o fim do mês pago. Venceu: a vitrine mostra
 | `src/lib/conta-mp.ts` | conta MP de cada lojista (token cifrado, renovação) |
 | `src/webhooks.ts` | avisos do Mercado Pago |
 | `migrations/` | esquema do banco (D1) e os planos iniciais |
-| `public/_lp/` | CSS e JS do painel e da vitrine |
+| `public/_lp/` | CSS, JS e ícones do painel e da vitrine (entram no Worker como texto: `src/estaticos.ts`) |
 | `ferramentas/mp-falso.py` | Mercado Pago de mentira, para testar venda sem dinheiro |
 | `ferramentas/stripe-falso.py` | Stripe de mentira, para testar a mensalidade sem cartão |
 
@@ -83,6 +83,11 @@ Abra <http://localhost:8787>, crie uma loja e veja a vitrine em
 `http://localhost:8787/loja/<endereço>` (ou `http://<endereço>.localhost:8787`).
 
 ## Colocar no ar
+
+**Já feito (25/11/2026):** banco D1 e bucket R2 criados, esquema aplicado,
+`SEGREDO_APP` cadastrado e o Worker publicado em
+<https://lojinha-pronta.okaiquemota.workers.dev>. Os passos abaixo ficam como
+referência para refazer do zero.
 
 ### 1. Banco, arquivos e segredos (uma vez)
 
@@ -189,19 +194,20 @@ link, a lojista recebe "você vendeu" e "esqueci a senha" funciona.
 O `*.lojinhapronta.com.br` precisa do DNS no Cloudflare, e hoje o domínio usa
 o DNS do Registro.br.
 
-1. No Cloudflare: **Add a domain** → `lojinhapronta.com.br` (plano Free).
-2. No Registro.br: troque os servidores DNS para os dois que o Cloudflare
-   mostrar.
-3. No Cloudflare, recrie o que já existe hoje (a landing está na Vercel), com
-   **proxy desligado** (nuvem cinza): `A @ 216.198.79.1` e
-   `CNAME www lojinhapronta.com.br`.
-4. No `wrangler.jsonc`, descomente `routes`, troque `APP_URL` para
-   `https://app.lojinhapronta.com.br` e `SUBDOMINIOS_ATIVOS` para `"sim"`.
-5. Crie no Cloudflare o registro `AAAA * 100::` com proxy **ligado**: o Worker
-   responde por ele.
-6. `npm run deploy`. Os endereços antigos `/loja/<nome>` passam a redirecionar
-   para o subdomínio.
-7. Atualize para o novo `APP_URL` a URL do webhook no Stripe e a de
+1. No painel do Cloudflare: **Adicionar um domínio** → `lojinhapronta.com.br`
+   → plano **Free**. Ele importa os registros que já existem.
+2. Na lista de DNS, confira que `lojinhapronta.com.br` (A `216.198.79.1`) e
+   `www` (CNAME) estão com a **nuvem cinza** (somente DNS): é a landing, que
+   continua na Vercel.
+3. Adicione um registro: tipo **AAAA**, nome **`*`**, IPv6 **`100::`**, com a
+   **nuvem laranja**. É por ele que os subdomínios chegam ao Worker.
+4. No Registro.br: **Alterar servidores DNS** para os dois que o Cloudflare
+   mostrar. A troca leva de minutos a algumas horas.
+5. Com o domínio **Ativo** no Cloudflare: no `wrangler.jsonc`, descomente
+   `routes`, troque `APP_URL` para `https://app.lojinhapronta.com.br` e
+   `SUBDOMINIOS_ATIVOS` para `"sim"`, e rode `npm run deploy`. Os endereços
+   antigos `/loja/<nome>` passam a redirecionar para o subdomínio.
+6. Atualize para o novo `APP_URL` a URL do webhook no Stripe e a de
    redirecionamento no Mercado Pago.
 
 ### Plano do Cloudflare

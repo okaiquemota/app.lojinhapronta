@@ -1,7 +1,6 @@
 export type Env = {
   DB: D1Database
   ARQUIVOS: R2Bucket
-  ASSETS: Fetcher
 
   DOMINIO_RAIZ: string
   APP_URL: string
