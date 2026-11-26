@@ -172,3 +172,47 @@ document.addEventListener('change', async (e) => {
   }
   input.files = saida.files
 })
+
+// Senha: botão de mostrar/esconder e aviso de Caps Lock ligado.
+;(() => {
+  const olho = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg>'
+  const fechado = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 3l18 18M10.6 10.6a2 2 0 0 0 2.8 2.8M9.9 5.1A10.8 10.8 0 0 1 12 5c6.4 0 10 7 10 7a17.6 17.6 0 0 1-3.2 4.2M6.6 6.6C3.9 8.4 2 12 2 12s3.6 7 10 7a10.6 10.6 0 0 0 5.4-1.5"/></svg>'
+  document.querySelectorAll('input[type=password]').forEach((input) => {
+    const caixa = document.createElement('div')
+    caixa.className = 'campo-senha'
+    input.parentNode.insertBefore(caixa, input)
+    caixa.appendChild(input)
+    const b = document.createElement('button')
+    b.type = 'button'
+    b.className = 'campo-senha__ver'
+    b.setAttribute('aria-label', 'Mostrar senha')
+    b.innerHTML = olho
+    b.addEventListener('click', () => {
+      const ver = input.type === 'password'
+      input.type = ver ? 'text' : 'password'
+      b.innerHTML = ver ? fechado : olho
+      b.setAttribute('aria-label', ver ? 'Esconder senha' : 'Mostrar senha')
+      input.focus()
+    })
+    caixa.appendChild(b)
+    const aviso = document.createElement('p')
+    aviso.className = 'caps-aviso'
+    aviso.hidden = true
+    aviso.textContent = 'Caps Lock está ligado'
+    caixa.after(aviso)
+    const caps = (e) => {
+      if (e.getModifierState) aviso.hidden = !e.getModifierState('CapsLock')
+    }
+    input.addEventListener('keyup', caps)
+    input.addEventListener('keydown', caps)
+    input.addEventListener('blur', () => (aviso.hidden = true))
+    // Ao enviar, a senha volta a ficar escondida (o navegador não guarda ela visível).
+    input.form?.addEventListener('submit', () => (input.type = 'password'))
+  })
+  // E-mail: sem letra maiúscula automática nem corretor no celular.
+  document.querySelectorAll('input[type=email]').forEach((i) => {
+    i.setAttribute('autocapitalize', 'none')
+    i.setAttribute('spellcheck', 'false')
+    i.setAttribute('autocorrect', 'off')
+  })
+})()

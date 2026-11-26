@@ -12,6 +12,7 @@ import { agora, campo, emailValido, lista, reais, slugificar, somarDias } from '
 import { slugValido } from '../lib/dominio'
 import { conferirSenha, gerarId, gerarToken, hashSenha, sha256 } from '../lib/seguranca'
 import { abrirSessao, fecharSessao, limparTentativas, registrarTentativa, tentativasRecentes, usuarioDaSessao } from '../lib/sessao'
+import { contarPorIp, excedeuPorIp, gastarTempoDeSenha, passouNoTurnstile, problemaNaSenha, turnstileLigado } from '../lib/protecao'
 import { enviarEmail, moldeEmail } from '../lib/email'
 
 const app = new Hono<{ Bindings: Env }>()
@@ -48,6 +49,19 @@ app.get('/', async (c) => {
 
 // ── criar loja ─────────────────────────────────────────────────────────────
 
+/** Desafio anti-robô do Cloudflare. Quase sempre invisível para gente de verdade. */
+function AntiRobo({ env }: { env: Env }) {
+  if (!turnstileLigado(env)) return null
+  return (
+    <>
+      <div class="cf-turnstile" data-sitekey={env.TURNSTILE_SITEKEY} data-language="pt-br" data-theme="light" data-size="flexible"></div>
+      <script src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer></script>
+    </>
+  )
+}
+
+const MSG_ROBO = 'Não conseguimos confirmar que é você. Recarregue a página e tente de novo.'
+
 type DadosCadastro = { nome: string; email: string; loja: string; slug: string }
 
 function FormCadastro({ env, d, erros, aviso }: { env: Env; d: DadosCadastro; erros: Record<string, string>; aviso?: Aviso | null }) {
@@ -73,8 +87,26 @@ function FormCadastro({ env, d, erros, aviso }: { env: Env; d: DadosCadastro; er
         />
         <hr />
         <Campo rotulo="Seu nome" nome="nome" valor={d.nome} obrigatorio max={80} autocomplete="name" erro={erros.nome} />
-        <Campo rotulo="E-mail" nome="email" tipo="email" valor={d.email} obrigatorio max={200} autocomplete="email" erro={erros.email} />
-        <Campo rotulo="Senha" nome="senha" tipo="password" obrigatorio min={8} max={200} autocomplete="new-password" erro={erros.senha} ajuda="Pelo menos 8 caracteres." />
+        <Campo rotulo="E-mail" nome="email" tipo="email" valor={d.email} obrigatorio max={200} autocomplete="email" modo="email" erro={erros.email} />
+        <Campo
+          rotulo="Senha"
+          nome="senha"
+          tipo="password"
+          obrigatorio
+          min={8}
+          max={128}
+          autocomplete="new-password"
+          erro={erros.senha}
+          ajuda="Pelo menos 8 caracteres. Uma frase curta é mais forte que uma palavra com símbolos."
+        />
+        {/* Isca para robô: escondida de gente, robô preenche tudo. */}
+        <div class="isca" aria-hidden="true">
+          <label>
+            Site <input name="site" tabindex={-1} autocomplete="off" />
+          </label>
+        </div>
+        <AntiRobo env={env} />
+        {erros.robo && <p class="campo__erro">{erros.robo}</p>}
         <Botao>Criar minha loja</Botao>
         <p class="form__rodape">
           Já tem loja? <a href="/entrar">Entrar</a>
@@ -91,6 +123,8 @@ app.get('/cadastro', async (c) => {
 
 /** Usado pelo campo de endereço enquanto a pessoa digita. */
 app.get('/api/endereco', async (c) => {
+  if (await excedeuPorIp(c, 'endereco', 200, 15)) return c.json({ livre: false, motivo: 'Muitas consultas. Espere um pouco.' }, 429)
+  await contarPorIp(c, 'endereco')
   const slug = slugificar(c.req.query('s') ?? '', 40)
   const erro = slugValido(slug)
   if (erro) return c.json({ slug, livre: false, motivo: erro })
@@ -108,12 +142,21 @@ app.post('/cadastro', async (c) => {
   }
   const senha = String(f.senha ?? '')
   const erros: Record<string, string> = {}
+  if (f.site) return c.text('Não foi possível criar a loja.', 400) // isca preenchida: robô
+  // Até 5 lojas por endereço de internet por dia.
+  if (await excedeuPorIp(c, 'cadastro', 5, 24 * 60)) {
+    return c.html(<FormCadastro env={c.env} d={d} erros={{}} aviso={{ tipo: 'erro', texto: 'Muitas lojas criadas a partir desta conexão hoje. Tente amanhã ou fale com o suporte.' }} />, 429)
+  }
+  if (!(await passouNoTurnstile(c, f['cf-turnstile-response']))) {
+    return c.html(<FormCadastro env={c.env} d={d} erros={{ robo: MSG_ROBO }} />, 400)
+  }
   if (d.loja.length < 2) erros.loja = 'Dê um nome para a loja.'
   const eSlug = slugValido(d.slug)
   if (eSlug) erros.slug = eSlug
   if (d.nome.length < 2) erros.nome = 'Como você se chama?'
   if (!emailValido(d.email)) erros.email = 'E-mail inválido.'
-  if (senha.length < 8) erros.senha = 'A senha precisa de pelo menos 8 caracteres.'
+  const eSenha = await problemaNaSenha(senha, d.email)
+  if (eSenha) erros.senha = eSenha
 
   if (!erros.email && (await c.env.DB.prepare('SELECT 1 FROM usuarios WHERE email = ?').bind(d.email).first())) {
     erros.email = 'Já existe uma conta com esse e-mail. Entre por ela.'
@@ -147,6 +190,7 @@ app.post('/cadastro', async (c) => {
     console.error('[cadastro]', e)
     return c.html(<FormCadastro env={c.env} d={d} erros={{ slug: 'Esse endereço acabou de ser usado. Tente outro.' }} />, 409)
   }
+  await contarPorIp(c, 'cadastro')
   await abrirSessao(c, usuarioId)
   avisar(c, 'Sua loja foi criada! Siga os passos abaixo para começar a vender.')
   return c.redirect('/painel')
@@ -154,16 +198,19 @@ app.post('/cadastro', async (c) => {
 
 // ── entrar e sair ──────────────────────────────────────────────────────────
 
+/** Para onde voltar depois de entrar: só caminhos do próprio painel. */
 function voltaSegura(v: string | undefined): string {
-  return v && v.startsWith('/') && !v.startsWith('//') ? v : '/painel'
+  if (!v || v.length > 300 || /[\\\s]/.test(v) || v.startsWith('//')) return '/painel'
+  return /^\/(painel|admin)(\/|\?|$)/.test(v) ? v : '/painel'
 }
 
-function FormEntrar({ email, volta, aviso }: { email?: string; volta?: string; aviso?: Aviso | null }) {
+function FormEntrar({ env, email, volta, aviso }: { env: Env; email?: string; volta?: string; aviso?: Aviso | null }) {
   return (
-    <TelaCentral titulo="Entrar" aviso={aviso}>
+    <TelaCentral titulo="Entrar" subtitulo="Acesse o painel da sua loja." aviso={aviso}>
       <form method="post" action={`/entrar${volta ? `?volta=${encodeURIComponent(volta)}` : ''}`} class="form">
-        <Campo rotulo="E-mail" nome="email" tipo="email" valor={email} obrigatorio autocomplete="email" autofocus={!email} />
-        <Campo rotulo="Senha" nome="senha" tipo="password" obrigatorio autocomplete="current-password" autofocus={!!email} />
+        <Campo rotulo="E-mail" nome="email" tipo="email" valor={email} obrigatorio max={200} autocomplete="username" modo="email" autofocus={!email} />
+        <Campo rotulo="Senha" nome="senha" tipo="password" obrigatorio max={128} autocomplete="current-password" autofocus={!!email} />
+        <AntiRobo env={env} />
         <Botao>Entrar</Botao>
         <p class="form__rodape">
           <a href="/esqueci">Esqueci a senha</a> · <a href="/cadastro">Criar loja</a>
@@ -175,22 +222,30 @@ function FormEntrar({ email, volta, aviso }: { email?: string; volta?: string; a
 
 app.get('/entrar', async (c) => {
   if (await usuarioDaSessao(c)) return c.redirect(voltaSegura(c.req.query('volta')))
-  return c.html(<FormEntrar volta={c.req.query('volta')} aviso={lerAviso(c)} />)
+  return c.html(<FormEntrar env={c.env} volta={c.req.query('volta')} aviso={lerAviso(c)} />)
 })
 
 app.post('/entrar', async (c) => {
   const f = await c.req.parseBody()
   const email = campo(f.email, 200).toLowerCase()
-  const senha = String(f.senha ?? '')
+  const senha = String(f.senha ?? '').slice(0, 128)
   const volta = c.req.query('volta')
+  const erro = (texto: string, status: number) => c.html(<FormEntrar env={c.env} email={email} volta={volta} aviso={{ tipo: 'erro', texto }} />, status as any)
 
-  if ((await tentativasRecentes(c.env, email)) >= 10) {
-    return c.html(<FormEntrar email={email} volta={volta} aviso={{ tipo: 'erro', texto: 'Muitas tentativas. Espere 15 minutos ou redefina a senha.' }} />, 429)
+  // Dois freios: 10 erros por e-mail e 30 erros por conexão, a cada 15 minutos.
+  if ((await tentativasRecentes(c.env, email)) >= 10 || (await excedeuPorIp(c, 'entrar', 30, 15))) {
+    return erro('Muitas tentativas. Espere 15 minutos ou redefina a senha.', 429)
   }
+  if (!(await passouNoTurnstile(c, f['cf-turnstile-response']))) return erro(MSG_ROBO, 400)
+
   const u = await c.env.DB.prepare('SELECT id, senha_hash FROM usuarios WHERE email = ?').bind(email).first<{ id: string; senha_hash: string }>()
-  if (!u || !(await conferirSenha(senha, u.senha_hash))) {
+  // Sem conta, confere contra um hash falso: a resposta demora o mesmo, e o
+  // tempo não entrega quais e-mails têm loja.
+  const ok = u ? await conferirSenha(senha, u.senha_hash) : (await gastarTempoDeSenha(senha), false)
+  if (!u || !ok) {
     await registrarTentativa(c.env, email)
-    return c.html(<FormEntrar email={email} volta={volta} aviso={{ tipo: 'erro', texto: 'E-mail ou senha não conferem.' }} />, 401)
+    await contarPorIp(c, 'entrar')
+    return erro('E-mail ou senha não conferem.', 401)
   }
   await limparTentativas(c.env, email)
   await abrirSessao(c, u.id)
@@ -208,7 +263,8 @@ app.get('/esqueci', (c) =>
   c.html(
     <TelaCentral titulo="Redefinir senha" subtitulo="Mandamos um link para o seu e-mail." aviso={lerAviso(c)}>
       <form method="post" action="/esqueci" class="form">
-        <Campo rotulo="E-mail da conta" nome="email" tipo="email" obrigatorio autocomplete="email" autofocus />
+        <Campo rotulo="E-mail da conta" nome="email" tipo="email" obrigatorio max={200} autocomplete="email" modo="email" autofocus />
+        <AntiRobo env={c.env} />
         <Botao>Enviar link</Botao>
         <p class="form__rodape">
           <a href="/entrar">Voltar para entrar</a>
@@ -221,6 +277,15 @@ app.get('/esqueci', (c) =>
 app.post('/esqueci', async (c) => {
   const f = await c.req.parseBody()
   const email = campo(f.email, 200).toLowerCase()
+  if (await excedeuPorIp(c, 'esqueci', 5, 60)) {
+    avisar(c, 'Muitos pedidos a partir desta conexão. Espere uma hora e tente de novo.', 'erro')
+    return c.redirect('/esqueci')
+  }
+  await contarPorIp(c, 'esqueci')
+  if (!(await passouNoTurnstile(c, f['cf-turnstile-response']))) {
+    avisar(c, MSG_ROBO, 'erro')
+    return c.redirect('/esqueci')
+  }
   if (!c.env.RESEND_API_KEY) {
     avisar(c, 'O envio de e-mail ainda não está ligado. Fale com o suporte da Lojinha Pronta para redefinir sua senha.', 'erro')
     return c.redirect('/esqueci')
@@ -254,7 +319,7 @@ app.get('/redefinir/:token', (c) =>
   c.html(
     <TelaCentral titulo="Nova senha">
       <form method="post" class="form">
-        <Campo rotulo="Nova senha" nome="senha" tipo="password" obrigatorio min={8} autocomplete="new-password" autofocus />
+        <Campo rotulo="Nova senha" nome="senha" tipo="password" obrigatorio min={8} max={128} autocomplete="new-password" autofocus />
         <Botao>Salvar e entrar</Botao>
       </form>
     </TelaCentral>,
@@ -271,11 +336,12 @@ app.post('/redefinir/:token', async (c) => {
     avisar(c, 'Esse link expirou ou já foi usado. Peça outro.', 'erro')
     return c.redirect('/esqueci')
   }
-  if (senha.length < 8) {
+  const eSenha = await problemaNaSenha(senha)
+  if (eSenha) {
     return c.html(
-      <TelaCentral titulo="Nova senha" aviso={{ tipo: 'erro', texto: 'A senha precisa de pelo menos 8 caracteres.' }}>
+      <TelaCentral titulo="Nova senha" aviso={{ tipo: 'erro', texto: eSenha }}>
         <form method="post" class="form">
-          <Campo rotulo="Nova senha" nome="senha" tipo="password" obrigatorio min={8} autocomplete="new-password" autofocus />
+          <Campo rotulo="Nova senha" nome="senha" tipo="password" obrigatorio min={8} max={128} autocomplete="new-password" autofocus />
           <Botao>Salvar e entrar</Botao>
         </form>
       </TelaCentral>,

@@ -7,7 +7,7 @@ import { diasAte, plural } from '../lib/formato'
 import { ehAdmin } from '../lib/sessao'
 import { CaixaAviso, Icone, type Aviso } from './ui'
 
-const VERSAO = '1'
+const VERSAO = "2"
 
 export function Documento(p: PropsWithChildren<{ titulo: string; descricao?: string; indexar?: boolean; classe?: string }>) {
   return (
