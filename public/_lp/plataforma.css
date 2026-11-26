@@ -359,3 +359,23 @@ button, input, select, textarea { font: inherit; color: inherit; }
   .campo__grupo input { flex: 1 1 8rem; }
   .campo__sufixo { flex: 1 1 100%; border-left: 0; border-top: 1px solid var(--borda); padding: .5rem .75rem; font-size: .82rem; }
 }
+
+/* ── cadastro em etapas ───────────────────────────────────────────────── */
+.etapa { border: 0; margin: 0; padding: 0; min-width: 0; display: grid; gap: 1.1rem; }
+.etapa[hidden] { display: none; }
+.etapa legend { font-weight: 700; color: var(--petroleo-900); font-size: 1rem; padding: 0; margin-bottom: .1rem; }
+.etapa + .etapa { margin-top: .5rem; padding-top: 1.25rem; border-top: 1px solid var(--borda); }
+.etapas, .etapa__botoes [data-avancar], .etapa__botoes [data-voltar] { display: none; }
+.etapas-ligadas .etapas { display: flex; }
+.etapas-ligadas .etapa + .etapa { margin-top: 0; padding-top: 0; border-top: 0; }
+.etapas-ligadas .etapa legend { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
+.etapas-ligadas .etapa__botoes [data-avancar], .etapas-ligadas .etapa__botoes [data-voltar] { display: inline-flex; }
+.etapa__botoes { display: flex; gap: .6rem; }
+.etapa__botoes .botao--principal { flex: 1; padding: .85rem; }
+.etapas { list-style: none; margin: 0 0 .25rem; padding: 0; gap: .35rem; counter-reset: e; }
+.etapas li { flex: 1; display: flex; flex-direction: column; gap: .35rem; font-size: .75rem; font-weight: 600; color: var(--tinta-55); }
+.etapas li::before { content: ""; height: 4px; border-radius: 4px; background: var(--areia-200); }
+.etapas li span { display: none; }
+.etapas li.feita::before { background: var(--petroleo-700); }
+.etapas li.atual::before { background: var(--coral-botao); }
+.etapas li.atual { color: var(--petroleo-900); }

@@ -62,52 +62,98 @@ function AntiRobo({ env }: { env: Env }) {
 
 const MSG_ROBO = 'Não conseguimos confirmar que é você. Recarregue a página e tente de novo.'
 
-type DadosCadastro = { nome: string; email: string; loja: string; slug: string }
+type DadosCadastro = { nome: string; email: string; email2: string; loja: string; slug: string }
+
+const ETAPAS = ['Sua loja', 'Seus dados', 'Senha']
+/** Em qual etapa cada campo mora: um erro devolve a pessoa direto para ela. */
+const ETAPA_DO_CAMPO: Record<string, number> = { loja: 1, slug: 1, nome: 2, email: 2, email2: 2, senha: 3, senha2: 3, robo: 3 }
 
 function FormCadastro({ env, d, erros, aviso }: { env: Env; d: DadosCadastro; erros: Record<string, string>; aviso?: Aviso | null }) {
+  const comErro = Object.keys(erros).map((k) => ETAPA_DO_CAMPO[k] ?? 1)
+  const inicial = comErro.length ? Math.min(...comErro) : 1
   return (
     <TelaCentral
       titulo="Crie sua loja"
       subtitulo={`${env.DIAS_TESTE} dias grátis, sem cartão. Você pode mudar tudo depois.`}
       aviso={aviso}
     >
-      <form method="post" action="/cadastro" class="form">
-        <Campo rotulo="Nome da loja" nome="loja" valor={d.loja} obrigatorio max={60} placeholder="Ex.: Ateliê da Ana" erro={erros.loja} autofocus />
-        <Campo
-          rotulo="Endereço da loja"
-          nome="slug"
-          valor={d.slug}
-          obrigatorio
-          max={40}
-          sufixo={`.${env.DOMINIO_RAIZ}`}
-          placeholder="ateliedaana"
-          autocomplete="off"
-          erro={erros.slug}
-          ajuda={<span data-slug-status>Só letras sem acento, números e hífen.</span>}
-        />
-        <hr />
-        <Campo rotulo="Seu nome" nome="nome" valor={d.nome} obrigatorio max={80} autocomplete="name" erro={erros.nome} />
-        <Campo rotulo="E-mail" nome="email" tipo="email" valor={d.email} obrigatorio max={200} autocomplete="email" modo="email" erro={erros.email} />
-        <Campo
-          rotulo="Senha"
-          nome="senha"
-          tipo="password"
-          obrigatorio
-          min={8}
-          max={128}
-          autocomplete="new-password"
-          erro={erros.senha}
-          ajuda="Pelo menos 8 caracteres. Uma frase curta é mais forte que uma palavra com símbolos."
-        />
-        {/* Isca para robô: escondida de gente, robô preenche tudo. */}
-        <div class="isca" aria-hidden="true">
-          <label>
-            Site <input name="site" tabindex={-1} autocomplete="off" />
-          </label>
-        </div>
-        <AntiRobo env={env} />
-        {erros.robo && <p class="campo__erro">{erros.robo}</p>}
-        <Botao>Criar minha loja</Botao>
+      <form method="post" action="/cadastro" class="form form--etapas" data-etapas data-etapa-inicial={String(inicial)}>
+        <ol class="etapas" aria-label="Etapas do cadastro">
+          {ETAPAS.map((t, i) => (
+            <li data-indicador={String(i + 1)} class={i + 1 === inicial ? 'atual' : i + 1 < inicial ? 'feita' : undefined}>
+              <span>{i + 1}</span>
+              {t}
+            </li>
+          ))}
+        </ol>
+
+        <fieldset class="etapa" data-etapa="1">
+          <legend>Sua loja</legend>
+          <Campo rotulo="Nome da loja" nome="loja" valor={d.loja} obrigatorio max={60} placeholder="Ex.: Ateliê da Ana" erro={erros.loja} autofocus />
+          <Campo
+            rotulo="Endereço da loja"
+            nome="slug"
+            valor={d.slug}
+            obrigatorio
+            max={40}
+            sufixo={`.${env.DOMINIO_RAIZ}`}
+            placeholder="ateliedaana"
+            autocomplete="off"
+            erro={erros.slug}
+            ajuda={<span data-slug-status>Só letras sem acento, números e hífen.</span>}
+          />
+          <div class="etapa__botoes">
+            <button type="button" class="botao botao--principal" data-avancar>
+              Continuar
+            </button>
+          </div>
+        </fieldset>
+
+        <fieldset class="etapa" data-etapa="2">
+          <legend>Seus dados</legend>
+          <Campo rotulo="Seu nome" nome="nome" valor={d.nome} obrigatorio max={80} autocomplete="name" erro={erros.nome} />
+          <Campo rotulo="E-mail" nome="email" tipo="email" valor={d.email} obrigatorio max={200} autocomplete="email" modo="email" erro={erros.email} ajuda="É por ele que você entra no painel e recebe os avisos de venda." />
+          <Campo rotulo="Confirme o e-mail" nome="email2" tipo="email" valor={d.email2} obrigatorio max={200} autocomplete="off" modo="email" erro={erros.email2} />
+          <div class="etapa__botoes">
+            <button type="button" class="botao botao--fantasma" data-voltar>
+              Voltar
+            </button>
+            <button type="button" class="botao botao--principal" data-avancar>
+              Continuar
+            </button>
+          </div>
+        </fieldset>
+
+        <fieldset class="etapa" data-etapa="3">
+          <legend>Senha</legend>
+          <Campo
+            rotulo="Senha"
+            nome="senha"
+            tipo="password"
+            obrigatorio
+            min={8}
+            max={128}
+            autocomplete="new-password"
+            erro={erros.senha}
+            ajuda="Pelo menos 8 caracteres. Uma frase curta é mais forte que uma palavra com símbolos."
+          />
+          <Campo rotulo="Confirme a senha" nome="senha2" tipo="password" obrigatorio min={8} max={128} autocomplete="new-password" erro={erros.senha2} />
+          {/* Isca para robô: escondida de gente, robô preenche tudo. */}
+          <div class="isca" aria-hidden="true">
+            <label>
+              Site <input name="site" tabindex={-1} autocomplete="off" />
+            </label>
+          </div>
+          <AntiRobo env={env} />
+          {erros.robo && <p class="campo__erro">{erros.robo}</p>}
+          <div class="etapa__botoes">
+            <button type="button" class="botao botao--fantasma" data-voltar>
+              Voltar
+            </button>
+            <Botao>Criar minha loja</Botao>
+          </div>
+        </fieldset>
+
         <p class="form__rodape">
           Já tem loja? <a href="/entrar">Entrar</a>
         </p>
@@ -118,7 +164,7 @@ function FormCadastro({ env, d, erros, aviso }: { env: Env; d: DadosCadastro; er
 
 app.get('/cadastro', async (c) => {
   if (await usuarioDaSessao(c)) return c.redirect('/painel')
-  return c.html(<FormCadastro env={c.env} d={{ nome: '', email: '', loja: '', slug: '' }} erros={{}} aviso={lerAviso(c)} />)
+  return c.html(<FormCadastro env={c.env} d={{ nome: '', email: '', email2: '', loja: '', slug: '' }} erros={{}} aviso={lerAviso(c)} />)
 })
 
 /** Usado pelo campo de endereço enquanto a pessoa digita. */
@@ -137,6 +183,7 @@ app.post('/cadastro', async (c) => {
   const d: DadosCadastro = {
     nome: campo(f.nome, 80),
     email: campo(f.email, 200).toLowerCase(),
+    email2: campo(f.email2, 200).toLowerCase(),
     loja: campo(f.loja, 60),
     slug: slugificar(campo(f.slug || f.loja, 60), 40),
   }
@@ -155,8 +202,10 @@ app.post('/cadastro', async (c) => {
   if (eSlug) erros.slug = eSlug
   if (d.nome.length < 2) erros.nome = 'Como você se chama?'
   if (!emailValido(d.email)) erros.email = 'E-mail inválido.'
+  else if (d.email2 !== d.email) erros.email2 = 'Os dois e-mails não são iguais.'
   const eSenha = await problemaNaSenha(senha, d.email)
   if (eSenha) erros.senha = eSenha
+  else if (String(f.senha2 ?? '') !== senha) erros.senha2 = 'As duas senhas não são iguais.'
 
   if (!erros.email && (await c.env.DB.prepare('SELECT 1 FROM usuarios WHERE email = ?').bind(d.email).first())) {
     erros.email = 'Já existe uma conta com esse e-mail. Entre por ela.'

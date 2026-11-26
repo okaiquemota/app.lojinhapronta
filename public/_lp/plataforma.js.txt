@@ -216,3 +216,78 @@ document.addEventListener('change', async (e) => {
     i.setAttribute('autocorrect', 'off')
   })
 })()
+
+// Cadastro em etapas: mostra uma de cada vez e só avança com os campos dela
+// válidos. Sem JS, o formulário aparece inteiro e o servidor confere tudo.
+;(() => {
+  const form = document.querySelector('[data-etapas]')
+  if (!form) return
+  const etapas = [...form.querySelectorAll('.etapa')]
+  const indicadores = [...form.querySelectorAll('[data-indicador]')]
+  let atual = Number(form.dataset.etapaInicial) || 1
+  form.classList.add('etapas-ligadas')
+  form.noValidate = true // a validação passa a ser por etapa, aqui embaixo
+
+  const campo = (n) => form.querySelector(`[name="${n}"]`)
+  // O e-mail compara sem diferença de maiúscula; a senha, exata.
+  const conferirIguais = () => {
+    const e1 = campo('email'), e2 = campo('email2'), s1 = campo('senha'), s2 = campo('senha2')
+    e2?.setCustomValidity(e2.value && e1.value.trim().toLowerCase() !== e2.value.trim().toLowerCase() ? 'Os dois e-mails não são iguais.' : '')
+    s2?.setCustomValidity(s2.value && s1.value !== s2.value ? 'As duas senhas não são iguais.' : '')
+  }
+  ;['email', 'email2', 'senha', 'senha2'].forEach((n) => campo(n)?.addEventListener('input', conferirIguais))
+
+  const mostrar = (n, focar) => {
+    atual = n
+    etapas.forEach((e) => (e.hidden = Number(e.dataset.etapa) !== n))
+    indicadores.forEach((li) => {
+      const i = Number(li.dataset.indicador)
+      li.classList.toggle('atual', i === n)
+      li.classList.toggle('feita', i < n)
+      if (i === n) li.setAttribute('aria-current', 'step')
+      else li.removeAttribute('aria-current')
+    })
+    if (focar) {
+      const primeiro = etapas[n - 1].querySelector('.campo--erro input, input:not([type=hidden]):not([tabindex="-1"])')
+      primeiro?.focus()
+    }
+  }
+
+  // A etapa só vale se todos os campos dela passam na validação do navegador.
+  const valida = (n) => {
+    conferirIguais()
+    const status = form.querySelector('[data-slug-status]')?.parentElement
+    if (n === 1 && status?.dataset.livre === 'nao') {
+      campo('slug').setCustomValidity(status.textContent.trim())
+    } else campo('slug')?.setCustomValidity('')
+    for (const i of etapas[n - 1].querySelectorAll('input')) {
+      if (!i.checkValidity()) {
+        i.reportValidity()
+        return false
+      }
+    }
+    return true
+  }
+
+  form.addEventListener('click', (e) => {
+    if (e.target.closest('[data-avancar]') && valida(atual)) mostrar(atual + 1, true)
+    if (e.target.closest('[data-voltar]')) mostrar(atual - 1, true)
+  })
+  // Enter num campo avança em vez de enviar o formulário pela metade.
+  form.addEventListener('keydown', (e) => {
+    if (e.key !== 'Enter' || e.target.tagName !== 'INPUT' || atual === etapas.length) return
+    e.preventDefault()
+    if (valida(atual)) mostrar(atual + 1, true)
+  })
+  form.addEventListener('submit', (e) => {
+    for (let n = 1; n <= etapas.length; n++) {
+      if (!valida(n)) {
+        e.preventDefault()
+        mostrar(n, false)
+        valida(n)
+        return
+      }
+    }
+  })
+  mostrar(atual, atual > 1)
+})()
