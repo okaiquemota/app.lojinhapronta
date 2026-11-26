@@ -18,11 +18,14 @@ import { ErroVenda, criarPedido, itensDoPedido, pedidoPorToken, sincronizarPedid
 import { enviarEmail, escaparHtml, moldeEmail } from '../lib/email'
 import { registrarTentativa, tentativasRecentes } from '../lib/sessao'
 import { urlDaLoja } from '../lib/dominio'
+import { cabecalhosVitrine } from '../lib/cabecalhos'
 
 type C = Context<{ Bindings: Env; Variables: VarsLoja }>
 const app = new Hono<{ Bindings: Env; Variables: VarsLoja }>()
 
 // ── qual loja? ─────────────────────────────────────────────────────────────
+
+app.use('*', cabecalhosVitrine)
 
 app.use('*', async (c, next) => {
   const slug = c.req.header('x-lp-slug')
@@ -729,8 +732,17 @@ app.get('/pedido/:token/baixar/:item', async (c) => {
   }
   if (!obj) return c.text('Arquivo indisponível no momento. Fale com a loja.', 404)
 
-  // Só conta o download que de fato começou.
-  await c.env.DB.prepare('UPDATE pedido_itens SET downloads = downloads + 1 WHERE id = ?').bind(item.id).run()
+  // Só conta o download que de fato começou, e conta e confere o limite numa
+  // operação só: dois cliques ao mesmo tempo não passam do limite.
+  const conta = await c.env.DB.prepare(
+    'UPDATE pedido_itens SET downloads = downloads + 1 WHERE id = ? AND (limite_downloads IS NULL OR downloads < limite_downloads)',
+  )
+    .bind(item.id)
+    .run()
+  if (!conta.meta.changes) {
+    await obj.body.cancel()
+    return c.text('O limite de downloads deste arquivo foi atingido. Fale com a loja.', 403)
+  }
   const arquivo = (nome ?? 'arquivo').replace(/["\\\r\n]/g, '')
   return new Response(obj.body, {
     headers: {

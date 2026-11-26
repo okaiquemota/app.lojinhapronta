@@ -14,17 +14,26 @@ export async function enviarEmail(
     return false
   }
   const nome = msg.nomeRemetente.replace(/["<>]/g, '').slice(0, 60)
-  const r = await fetch('https://api.resend.com/emails', {
-    method: 'POST',
-    headers: { Authorization: `Bearer ${env.RESEND_API_KEY}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      from: `${nome} <${env.EMAIL_REMETENTE}>`,
-      to: [msg.para],
-      subject: msg.assunto,
-      html: msg.html,
-      reply_to: msg.responderPara || undefined,
-    }),
-  })
+  let r: Response
+  try {
+    r = await fetch('https://api.resend.com/emails', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${env.RESEND_API_KEY}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        from: `${nome} <${env.EMAIL_REMETENTE}>`,
+        to: [msg.para],
+        subject: msg.assunto,
+        html: msg.html,
+        reply_to: msg.responderPara || undefined,
+      }),
+      signal: AbortSignal.timeout(10_000),
+    })
+  } catch (e) {
+    // Rede fora ou Resend lento: quem chamou trata como "não saiu" (o painel
+    // mostra "não enviado" e a lojista pode reenviar ou copiar o link).
+    console.error('[email] sem resposta', e)
+    return false
+  }
   if (!r.ok) {
     console.error(`[email] falhou ${r.status}: ${(await r.text()).slice(0, 300)}`)
     return false
