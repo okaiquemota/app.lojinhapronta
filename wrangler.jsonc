@@ -35,7 +35,10 @@
     "DIAS_TESTE": "7",
     // "nao" enquanto o domínio não usa o DNS do Cloudflare: as lojas abrem em
     // app.lojinhapronta.com.br/loja/<nome>. Virar para "sim" depois.
-    "SUBDOMINIOS_ATIVOS": "sim"
+    "SUBDOMINIOS_ATIVOS": "sim",
+    // Anti-robô (Turnstile) das telas de acesso. A chave pública fica aqui; o
+    // segredo, em TURNSTILE_SECRET. Sem os dois, fica desligado.
+    "TURNSTILE_SITEKEY": "0x4AAAAAAGUEP7dLhCXWzONU"
   },
 
   // Os subdomínios das lojas. Só funcionam depois que o domínio passar a usar o
