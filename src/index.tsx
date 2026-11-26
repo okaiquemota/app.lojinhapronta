@@ -74,6 +74,13 @@ export default {
     if (url.pathname.startsWith('/_lp/')) return servirEstatico(url.pathname.slice(5))
     if (url.pathname.startsWith('/i/')) return servirImagem(env, url.pathname.slice(3), req)
 
+    // Domínio principal: www vai para a raiz; a raiz mostra a apresentação, e o
+    // resto (cadastro, entrar, painel) mora em app., onde fica a sessão.
+    const host = url.hostname.toLowerCase()
+    const raiz = env.DOMINIO_RAIZ.toLowerCase()
+    if (host === `www.${raiz}`) return Response.redirect(`https://${raiz}${url.pathname}${url.search}`, 301)
+    if (host === raiz && url.pathname !== '/') return Response.redirect(`${env.APP_URL}${url.pathname}${url.search}`, 301)
+
     const alvo = resolverHost(url.hostname, env)
     if (alvo) {
       // A vitrine num subdomínio não tem painel: /painel ali é página de loja.

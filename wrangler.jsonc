@@ -42,6 +42,8 @@
   // DNS do Cloudflare (ver LEIA-ME, "Colocar no ar").
   "routes": [
     { "pattern": "app.lojinhapronta.com.br", "custom_domain": true },
+    // A raiz só passa pelo Worker com a nuvem laranja ligada no registro A.
+    { "pattern": "lojinhapronta.com.br/*", "zone_name": "lojinhapronta.com.br" },
     { "pattern": "*.lojinhapronta.com.br/*", "zone_name": "lojinhapronta.com.br" }
   ],
 

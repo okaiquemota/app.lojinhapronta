@@ -193,9 +193,10 @@ export function PaginaInicial({ env, planos }: { env: Env; planos: Plano[] }) {
             name="description"
             content={`Crie sua loja de apostila, molde e material digital em minutos. Pix e cartão no automático, entrega do arquivo na hora. ${dias} dias grátis.`}
           />
+          <link rel="canonical" href={`${env.SITE_URL}/`} />
+          <meta property="og:url" content={`${env.SITE_URL}/`} />
           <meta property="og:title" content="Lojinha Pronta — Sua loja pronta pra vender" />
           <meta property="og:description" content="Loja virtual pra quem vende material digital. O cliente paga por Pix ou cartão e recebe o arquivo na hora, sozinho." />
-          <meta property="og:image" content={`${env.SITE_URL}/og.png`} />
           <link rel="icon" type="image/svg+xml" href="/_lp/favicon.svg" />
           <link rel="preconnect" href="https://fonts.googleapis.com" />
           <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="" />
