@@ -4,13 +4,15 @@
  */
 import { Hono } from 'hono'
 import type { Env, Plano } from '../tipos'
-import { Documento, Marca, TelaCentral } from './layout'
+import { TelaCentral } from './layout'
+import { PaginaInicial } from './site'
 import { Botao, Campo, avisar, lerAviso, type Aviso } from './ui'
 import { planos as listarPlanos } from '../lib/lojas'
 import { agora, campo, emailValido, lista, reais, slugificar, somarDias } from '../lib/formato'
 import { slugValido } from '../lib/dominio'
 import { conferirSenha, gerarId, gerarToken, hashSenha, sha256 } from '../lib/seguranca'
 import { abrirSessao, fecharSessao, limparTentativas, registrarTentativa, tentativasRecentes, usuarioDaSessao } from '../lib/sessao'
+import { contarPorIp, excedeuPorIp, gastarTempoDeSenha, passouNoTurnstile, problemaNaSenha, turnstileLigado } from '../lib/protecao'
 import { enviarEmail, moldeEmail } from '../lib/email'
 
 const app = new Hono<{ Bindings: Env }>()
@@ -42,98 +44,116 @@ export function CartoesPlanos({ planos, acao }: { planos: Plano[]; acao?: (p: Pl
 
 app.get('/', async (c) => {
   if (await usuarioDaSessao(c)) return c.redirect('/painel')
-  const planos = await listarPlanos(c.env)
-  const dias = Number(c.env.DIAS_TESTE) || 7
-  return c.html(
-    <Documento titulo="Lojinha Pronta — crie sua loja de material digital" descricao="Monte sua loja de material digital em minutos. Pix, cartão e boleto, com entrega automática do arquivo." indexar>
-      <header class="site-topo">
-        <Marca />
-        <nav>
-          <a href="/entrar">Entrar</a>
-          <Botao href="/cadastro" pequeno>
-            Criar minha loja
-          </Botao>
-        </nav>
-      </header>
-      <main class="site">
-        <section class="heroi">
-          <p class="heroi__selo">{dias} dias grátis · sem cartão para testar</p>
-          <h1>Sua loja de material digital no ar hoje.</h1>
-          <p class="heroi__texto">
-            Você cadastra o PDF, a cliente paga por Pix, cartão ou boleto, e o arquivo chega sozinho no e-mail dela. Sem WordPress, sem plugin, sem
-            hospedagem para cuidar.
-          </p>
-          <div class="heroi__acoes">
-            <Botao href="/cadastro">Criar minha loja grátis</Botao>
-            <span class="heroi__nota">
-              Sua loja fica em <strong>suamarca.{c.env.DOMINIO_RAIZ}</strong>
-            </span>
-          </div>
-        </section>
-
-        <section class="passos">
-          <article>
-            <span>1</span>
-            <h3>Crie a loja</h3>
-            <p>Escolha o nome e o endereço. Em um minuto ela existe, com páginas de privacidade, termos e reembolso já escritas.</p>
-          </article>
-          <article>
-            <span>2</span>
-            <h3>Cadastre os materiais</h3>
-            <p>Foto, preço e o arquivo. Ponha suas cores e sua logo. A vitrine se monta sozinha, bonita no celular.</p>
-          </article>
-          <article>
-            <span>3</span>
-            <h3>Conecte o Mercado Pago</h3>
-            <p>Um botão. O dinheiro de cada venda cai direto na sua conta, e o arquivo é liberado no instante do pagamento.</p>
-          </article>
-        </section>
-
-        <section class="secao-planos" id="planos">
-          <h2>Planos</h2>
-          <p class="secao-planos__sub">Teste {dias} dias com tudo liberado. Depois, escolha o plano — cancele quando quiser.</p>
-          <CartoesPlanos planos={planos} />
-        </section>
-      </main>
-      <footer class="site-rodape">
-        <p>
-          Lojinha Pronta · <a href={c.env.SITE_URL}>{c.env.SITE_URL.replace(/^https?:\/\//, '')}</a>
-        </p>
-      </footer>
-    </Documento>,
-  )
+  return c.html(<PaginaInicial env={c.env} planos={await listarPlanos(c.env)} />)
 })
 
 // ── criar loja ─────────────────────────────────────────────────────────────
 
-type DadosCadastro = { nome: string; email: string; loja: string; slug: string }
+/** Desafio anti-robô do Cloudflare. Quase sempre invisível para gente de verdade. */
+function AntiRobo({ env }: { env: Env }) {
+  if (!turnstileLigado(env)) return null
+  return (
+    <>
+      <div class="cf-turnstile" data-sitekey={env.TURNSTILE_SITEKEY} data-language="pt-br" data-theme="light" data-size="flexible"></div>
+      <script src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer></script>
+    </>
+  )
+}
+
+const MSG_ROBO = 'Não conseguimos confirmar que é você. Recarregue a página e tente de novo.'
+
+type DadosCadastro = { nome: string; email: string; email2: string; loja: string; slug: string }
+
+const ETAPAS = ['Sua loja', 'Seus dados', 'Senha']
+/** Em qual etapa cada campo mora: um erro devolve a pessoa direto para ela. */
+const ETAPA_DO_CAMPO: Record<string, number> = { loja: 1, slug: 1, nome: 2, email: 2, email2: 2, senha: 3, senha2: 3, robo: 3 }
 
 function FormCadastro({ env, d, erros, aviso }: { env: Env; d: DadosCadastro; erros: Record<string, string>; aviso?: Aviso | null }) {
+  const comErro = Object.keys(erros).map((k) => ETAPA_DO_CAMPO[k] ?? 1)
+  const inicial = comErro.length ? Math.min(...comErro) : 1
   return (
     <TelaCentral
       titulo="Crie sua loja"
       subtitulo={`${env.DIAS_TESTE} dias grátis, sem cartão. Você pode mudar tudo depois.`}
       aviso={aviso}
     >
-      <form method="post" action="/cadastro" class="form">
-        <Campo rotulo="Nome da loja" nome="loja" valor={d.loja} obrigatorio max={60} placeholder="Ex.: Ateliê da Ana" erro={erros.loja} autofocus />
-        <Campo
-          rotulo="Endereço da loja"
-          nome="slug"
-          valor={d.slug}
-          obrigatorio
-          max={40}
-          sufixo={`.${env.DOMINIO_RAIZ}`}
-          placeholder="ateliedaana"
-          autocomplete="off"
-          erro={erros.slug}
-          ajuda={<span data-slug-status>Só letras sem acento, números e hífen.</span>}
-        />
-        <hr />
-        <Campo rotulo="Seu nome" nome="nome" valor={d.nome} obrigatorio max={80} autocomplete="name" erro={erros.nome} />
-        <Campo rotulo="E-mail" nome="email" tipo="email" valor={d.email} obrigatorio max={200} autocomplete="email" erro={erros.email} />
-        <Campo rotulo="Senha" nome="senha" tipo="password" obrigatorio min={8} max={200} autocomplete="new-password" erro={erros.senha} ajuda="Pelo menos 8 caracteres." />
-        <Botao>Criar minha loja</Botao>
+      <form method="post" action="/cadastro" class="form form--etapas" data-etapas data-etapa-inicial={String(inicial)}>
+        <ol class="etapas" aria-label="Etapas do cadastro">
+          {ETAPAS.map((t, i) => (
+            <li data-indicador={String(i + 1)} class={i + 1 === inicial ? 'atual' : i + 1 < inicial ? 'feita' : undefined}>
+              <span>{i + 1}</span>
+              {t}
+            </li>
+          ))}
+        </ol>
+
+        <fieldset class="etapa" data-etapa="1">
+          <legend>Sua loja</legend>
+          <Campo rotulo="Nome da loja" nome="loja" valor={d.loja} obrigatorio max={60} placeholder="Ex.: Ateliê da Ana" erro={erros.loja} autofocus />
+          <Campo
+            rotulo="Endereço da loja"
+            nome="slug"
+            valor={d.slug}
+            obrigatorio
+            max={40}
+            sufixo={`.${env.DOMINIO_RAIZ}`}
+            placeholder="ateliedaana"
+            autocomplete="off"
+            erro={erros.slug}
+            ajuda={<span data-slug-status>Só letras sem acento, números e hífen.</span>}
+          />
+          <div class="etapa__botoes">
+            <button type="button" class="botao botao--principal" data-avancar>
+              Continuar
+            </button>
+          </div>
+        </fieldset>
+
+        <fieldset class="etapa" data-etapa="2">
+          <legend>Seus dados</legend>
+          <Campo rotulo="Seu nome" nome="nome" valor={d.nome} obrigatorio max={80} autocomplete="name" erro={erros.nome} />
+          <Campo rotulo="E-mail" nome="email" tipo="email" valor={d.email} obrigatorio max={200} autocomplete="email" modo="email" erro={erros.email} ajuda="É por ele que você entra no painel e recebe os avisos de venda." />
+          <Campo rotulo="Confirme o e-mail" nome="email2" tipo="email" valor={d.email2} obrigatorio max={200} autocomplete="off" modo="email" erro={erros.email2} />
+          <div class="etapa__botoes">
+            <button type="button" class="botao botao--fantasma" data-voltar>
+              Voltar
+            </button>
+            <button type="button" class="botao botao--principal" data-avancar>
+              Continuar
+            </button>
+          </div>
+        </fieldset>
+
+        <fieldset class="etapa" data-etapa="3">
+          <legend>Senha</legend>
+          <Campo
+            rotulo="Senha"
+            nome="senha"
+            tipo="password"
+            obrigatorio
+            min={8}
+            max={128}
+            autocomplete="new-password"
+            erro={erros.senha}
+            ajuda="Pelo menos 8 caracteres. Uma frase curta é mais forte que uma palavra com símbolos."
+          />
+          <Campo rotulo="Confirme a senha" nome="senha2" tipo="password" obrigatorio min={8} max={128} autocomplete="new-password" erro={erros.senha2} />
+          {/* Isca para robô: escondida de gente, robô preenche tudo. */}
+          <div class="isca" aria-hidden="true">
+            <label>
+              Site <input name="site" tabindex={-1} autocomplete="off" />
+            </label>
+          </div>
+          <AntiRobo env={env} />
+          {erros.robo && <p class="campo__erro">{erros.robo}</p>}
+          <div class="etapa__botoes">
+            <button type="button" class="botao botao--fantasma" data-voltar>
+              Voltar
+            </button>
+            <Botao>Criar minha loja</Botao>
+          </div>
+        </fieldset>
+
         <p class="form__rodape">
           Já tem loja? <a href="/entrar">Entrar</a>
         </p>
@@ -144,11 +164,13 @@ function FormCadastro({ env, d, erros, aviso }: { env: Env; d: DadosCadastro; er
 
 app.get('/cadastro', async (c) => {
   if (await usuarioDaSessao(c)) return c.redirect('/painel')
-  return c.html(<FormCadastro env={c.env} d={{ nome: '', email: '', loja: '', slug: '' }} erros={{}} aviso={lerAviso(c)} />)
+  return c.html(<FormCadastro env={c.env} d={{ nome: '', email: '', email2: '', loja: '', slug: '' }} erros={{}} aviso={lerAviso(c)} />)
 })
 
 /** Usado pelo campo de endereço enquanto a pessoa digita. */
 app.get('/api/endereco', async (c) => {
+  if (await excedeuPorIp(c, 'endereco', 200, 15)) return c.json({ livre: false, motivo: 'Muitas consultas. Espere um pouco.' }, 429)
+  await contarPorIp(c, 'endereco')
   const slug = slugificar(c.req.query('s') ?? '', 40)
   const erro = slugValido(slug)
   if (erro) return c.json({ slug, livre: false, motivo: erro })
@@ -161,17 +183,29 @@ app.post('/cadastro', async (c) => {
   const d: DadosCadastro = {
     nome: campo(f.nome, 80),
     email: campo(f.email, 200).toLowerCase(),
+    email2: campo(f.email2, 200).toLowerCase(),
     loja: campo(f.loja, 60),
     slug: slugificar(campo(f.slug || f.loja, 60), 40),
   }
   const senha = String(f.senha ?? '')
   const erros: Record<string, string> = {}
+  if (f.site) return c.text('Não foi possível criar a loja.', 400) // isca preenchida: robô
+  // Até 5 lojas por endereço de internet por dia.
+  if (await excedeuPorIp(c, 'cadastro', 5, 24 * 60)) {
+    return c.html(<FormCadastro env={c.env} d={d} erros={{}} aviso={{ tipo: 'erro', texto: 'Muitas lojas criadas a partir desta conexão hoje. Tente amanhã ou fale com o suporte.' }} />, 429)
+  }
+  if (!(await passouNoTurnstile(c, f['cf-turnstile-response']))) {
+    return c.html(<FormCadastro env={c.env} d={d} erros={{ robo: MSG_ROBO }} />, 400)
+  }
   if (d.loja.length < 2) erros.loja = 'Dê um nome para a loja.'
   const eSlug = slugValido(d.slug)
   if (eSlug) erros.slug = eSlug
   if (d.nome.length < 2) erros.nome = 'Como você se chama?'
   if (!emailValido(d.email)) erros.email = 'E-mail inválido.'
-  if (senha.length < 8) erros.senha = 'A senha precisa de pelo menos 8 caracteres.'
+  else if (d.email2 !== d.email) erros.email2 = 'Os dois e-mails não são iguais.'
+  const eSenha = await problemaNaSenha(senha, d.email)
+  if (eSenha) erros.senha = eSenha
+  else if (String(f.senha2 ?? '') !== senha) erros.senha2 = 'As duas senhas não são iguais.'
 
   if (!erros.email && (await c.env.DB.prepare('SELECT 1 FROM usuarios WHERE email = ?').bind(d.email).first())) {
     erros.email = 'Já existe uma conta com esse e-mail. Entre por ela.'
@@ -205,6 +239,7 @@ app.post('/cadastro', async (c) => {
     console.error('[cadastro]', e)
     return c.html(<FormCadastro env={c.env} d={d} erros={{ slug: 'Esse endereço acabou de ser usado. Tente outro.' }} />, 409)
   }
+  await contarPorIp(c, 'cadastro')
   await abrirSessao(c, usuarioId)
   avisar(c, 'Sua loja foi criada! Siga os passos abaixo para começar a vender.')
   return c.redirect('/painel')
@@ -212,16 +247,19 @@ app.post('/cadastro', async (c) => {
 
 // ── entrar e sair ──────────────────────────────────────────────────────────
 
+/** Para onde voltar depois de entrar: só caminhos do próprio painel. */
 function voltaSegura(v: string | undefined): string {
-  return v && v.startsWith('/') && !v.startsWith('//') ? v : '/painel'
+  if (!v || v.length > 300 || /[\\\s]/.test(v) || v.startsWith('//')) return '/painel'
+  return /^\/(painel|admin)(\/|\?|$)/.test(v) ? v : '/painel'
 }
 
-function FormEntrar({ email, volta, aviso }: { email?: string; volta?: string; aviso?: Aviso | null }) {
+function FormEntrar({ env, email, volta, aviso }: { env: Env; email?: string; volta?: string; aviso?: Aviso | null }) {
   return (
-    <TelaCentral titulo="Entrar" aviso={aviso}>
+    <TelaCentral titulo="Entrar" subtitulo="Acesse o painel da sua loja." aviso={aviso}>
       <form method="post" action={`/entrar${volta ? `?volta=${encodeURIComponent(volta)}` : ''}`} class="form">
-        <Campo rotulo="E-mail" nome="email" tipo="email" valor={email} obrigatorio autocomplete="email" autofocus={!email} />
-        <Campo rotulo="Senha" nome="senha" tipo="password" obrigatorio autocomplete="current-password" autofocus={!!email} />
+        <Campo rotulo="E-mail" nome="email" tipo="email" valor={email} obrigatorio max={200} autocomplete="username" modo="email" autofocus={!email} />
+        <Campo rotulo="Senha" nome="senha" tipo="password" obrigatorio max={128} autocomplete="current-password" autofocus={!!email} />
+        <AntiRobo env={env} />
         <Botao>Entrar</Botao>
         <p class="form__rodape">
           <a href="/esqueci">Esqueci a senha</a> · <a href="/cadastro">Criar loja</a>
@@ -233,22 +271,30 @@ function FormEntrar({ email, volta, aviso }: { email?: string; volta?: string; a
 
 app.get('/entrar', async (c) => {
   if (await usuarioDaSessao(c)) return c.redirect(voltaSegura(c.req.query('volta')))
-  return c.html(<FormEntrar volta={c.req.query('volta')} aviso={lerAviso(c)} />)
+  return c.html(<FormEntrar env={c.env} volta={c.req.query('volta')} aviso={lerAviso(c)} />)
 })
 
 app.post('/entrar', async (c) => {
   const f = await c.req.parseBody()
   const email = campo(f.email, 200).toLowerCase()
-  const senha = String(f.senha ?? '')
+  const senha = String(f.senha ?? '').slice(0, 128)
   const volta = c.req.query('volta')
+  const erro = (texto: string, status: number) => c.html(<FormEntrar env={c.env} email={email} volta={volta} aviso={{ tipo: 'erro', texto }} />, status as any)
 
-  if ((await tentativasRecentes(c.env, email)) >= 10) {
-    return c.html(<FormEntrar email={email} volta={volta} aviso={{ tipo: 'erro', texto: 'Muitas tentativas. Espere 15 minutos ou redefina a senha.' }} />, 429)
+  // Dois freios: 10 erros por e-mail e 30 erros por conexão, a cada 15 minutos.
+  if ((await tentativasRecentes(c.env, email)) >= 10 || (await excedeuPorIp(c, 'entrar', 30, 15))) {
+    return erro('Muitas tentativas. Espere 15 minutos ou redefina a senha.', 429)
   }
+  if (!(await passouNoTurnstile(c, f['cf-turnstile-response']))) return erro(MSG_ROBO, 400)
+
   const u = await c.env.DB.prepare('SELECT id, senha_hash FROM usuarios WHERE email = ?').bind(email).first<{ id: string; senha_hash: string }>()
-  if (!u || !(await conferirSenha(senha, u.senha_hash))) {
+  // Sem conta, confere contra um hash falso: a resposta demora o mesmo, e o
+  // tempo não entrega quais e-mails têm loja.
+  const ok = u ? await conferirSenha(senha, u.senha_hash) : (await gastarTempoDeSenha(senha), false)
+  if (!u || !ok) {
     await registrarTentativa(c.env, email)
-    return c.html(<FormEntrar email={email} volta={volta} aviso={{ tipo: 'erro', texto: 'E-mail ou senha não conferem.' }} />, 401)
+    await contarPorIp(c, 'entrar')
+    return erro('E-mail ou senha não conferem.', 401)
   }
   await limparTentativas(c.env, email)
   await abrirSessao(c, u.id)
@@ -266,7 +312,8 @@ app.get('/esqueci', (c) =>
   c.html(
     <TelaCentral titulo="Redefinir senha" subtitulo="Mandamos um link para o seu e-mail." aviso={lerAviso(c)}>
       <form method="post" action="/esqueci" class="form">
-        <Campo rotulo="E-mail da conta" nome="email" tipo="email" obrigatorio autocomplete="email" autofocus />
+        <Campo rotulo="E-mail da conta" nome="email" tipo="email" obrigatorio max={200} autocomplete="email" modo="email" autofocus />
+        <AntiRobo env={c.env} />
         <Botao>Enviar link</Botao>
         <p class="form__rodape">
           <a href="/entrar">Voltar para entrar</a>
@@ -279,6 +326,15 @@ app.get('/esqueci', (c) =>
 app.post('/esqueci', async (c) => {
   const f = await c.req.parseBody()
   const email = campo(f.email, 200).toLowerCase()
+  if (await excedeuPorIp(c, 'esqueci', 5, 60)) {
+    avisar(c, 'Muitos pedidos a partir desta conexão. Espere uma hora e tente de novo.', 'erro')
+    return c.redirect('/esqueci')
+  }
+  await contarPorIp(c, 'esqueci')
+  if (!(await passouNoTurnstile(c, f['cf-turnstile-response']))) {
+    avisar(c, MSG_ROBO, 'erro')
+    return c.redirect('/esqueci')
+  }
   if (!c.env.RESEND_API_KEY) {
     avisar(c, 'O envio de e-mail ainda não está ligado. Fale com o suporte da Lojinha Pronta para redefinir sua senha.', 'erro')
     return c.redirect('/esqueci')
@@ -312,7 +368,7 @@ app.get('/redefinir/:token', (c) =>
   c.html(
     <TelaCentral titulo="Nova senha">
       <form method="post" class="form">
-        <Campo rotulo="Nova senha" nome="senha" tipo="password" obrigatorio min={8} autocomplete="new-password" autofocus />
+        <Campo rotulo="Nova senha" nome="senha" tipo="password" obrigatorio min={8} max={128} autocomplete="new-password" autofocus />
         <Botao>Salvar e entrar</Botao>
       </form>
     </TelaCentral>,
@@ -329,11 +385,12 @@ app.post('/redefinir/:token', async (c) => {
     avisar(c, 'Esse link expirou ou já foi usado. Peça outro.', 'erro')
     return c.redirect('/esqueci')
   }
-  if (senha.length < 8) {
+  const eSenha = await problemaNaSenha(senha)
+  if (eSenha) {
     return c.html(
-      <TelaCentral titulo="Nova senha" aviso={{ tipo: 'erro', texto: 'A senha precisa de pelo menos 8 caracteres.' }}>
+      <TelaCentral titulo="Nova senha" aviso={{ tipo: 'erro', texto: eSenha }}>
         <form method="post" class="form">
-          <Campo rotulo="Nova senha" nome="senha" tipo="password" obrigatorio min={8} autocomplete="new-password" autofocus />
+          <Campo rotulo="Nova senha" nome="senha" tipo="password" obrigatorio min={8} max={128} autocomplete="new-password" autofocus />
           <Botao>Salvar e entrar</Botao>
         </form>
       </TelaCentral>,

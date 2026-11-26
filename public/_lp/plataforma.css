@@ -118,8 +118,16 @@ button, input, select, textarea { font: inherit; color: inherit; }
 .acoes-form--fixa { position: sticky; top: 1.25rem; }
 .pilha { display: grid; gap: .5rem; justify-items: start; margin-top: 1rem; }
 
-/* ── telas centrais (entrar, cadastro) ────────────────────────────────── */
-.corpo-central { background: radial-gradient(ellipse at top, #fff 0%, var(--areia-50) 60%); }
+/* ── telas centrais (entrar, cadastro): o fundo escuro da landing ───────── */
+.corpo-central { position: relative; min-height: 100vh; background: var(--petroleo-900); overflow-x: hidden; }
+.central__aurora { position: fixed; inset: -20%; z-index: 0; filter: blur(90px); opacity: .85; pointer-events: none; }
+.central__aurora span { position: absolute; border-radius: 50%; }
+.central__aurora span:first-child { width: 46vmax; height: 46vmax; right: 2%; top: 4%; background: radial-gradient(circle, rgba(255, 107, 91, .55), transparent 65%); }
+.central__aurora span:last-child { width: 52vmax; height: 52vmax; left: 0; bottom: 0; background: radial-gradient(circle, rgba(89, 131, 146, .55), transparent 65%); }
+.corpo-central .central { position: relative; z-index: 1; }
+.corpo-central .marca { color: #fff; }
+.corpo-central .central__caixa { border: 0; box-shadow: 0 30px 70px rgba(4, 20, 28, .5), 0 6px 18px rgba(4, 20, 28, .3); border-radius: 22px; }
+.corpo-central .form__rodape a { color: var(--coral-botao); font-weight: 600; }
 .central { min-height: 100vh; display: flex; flex-direction: column; align-items: center; gap: 1.5rem; padding: clamp(2rem, 6vh, 4rem) 1rem 3rem; }
 .central__caixa { width: 100%; max-width: 26rem; background: #fff; border-radius: 18px; padding: clamp(1.5rem, 5vw, 2.25rem); box-shadow: var(--sombra); border: 1px solid var(--borda); }
 .central--largo .central__caixa { max-width: 32rem; }
@@ -328,3 +336,46 @@ button, input, select, textarea { font: inherit; color: inherit; }
 .passo-a-passo { margin: 0; padding-left: 1.25rem; display: grid; gap: .4rem; }
 .conectar, .conectado { display: grid; gap: 1rem; }
 .conectar .botao { justify-self: start; }
+
+/* ── telas de acesso: segurança e celular ─────────────────────────────── */
+.isca { position: absolute !important; left: -10000px !important; width: 1px; height: 1px; overflow: hidden; }
+.campo-senha { position: relative; }
+.campo-senha input { padding-right: 3.25rem !important; }
+.campo-senha__ver {
+  position: absolute; right: .35rem; top: 50%; transform: translateY(-50%);
+  display: grid; place-items: center; width: 2.6rem; height: 2.6rem; border: 0; border-radius: 8px;
+  background: transparent; color: var(--tinta-55); cursor: pointer;
+}
+.campo-senha__ver:hover, .campo-senha__ver:focus-visible { color: var(--petroleo-700); background: var(--areia-100); outline: none; }
+.campo-senha__ver svg { width: 1.2rem; height: 1.2rem; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+.caps-aviso { margin: .1rem 0 0; font-size: .8rem; color: var(--amarelo); font-weight: 600; }
+.cf-turnstile { min-height: 65px; }
+.corpo-central input { font-size: 16px; } /* abaixo de 16px o iPhone dá zoom no campo */
+@media (max-width: 480px) {
+  .central { padding: 1.5rem .75rem 2rem; gap: 1.1rem; }
+  .central__caixa { padding: 1.4rem 1.15rem; border-radius: 18px; }
+  .central__caixa h1 { font-size: 1.55rem; }
+  .campo__grupo { flex-wrap: wrap; }
+  .campo__grupo input { flex: 1 1 8rem; }
+  .campo__sufixo { flex: 1 1 100%; border-left: 0; border-top: 1px solid var(--borda); padding: .5rem .75rem; font-size: .82rem; }
+}
+
+/* ── cadastro em etapas ───────────────────────────────────────────────── */
+.etapa { border: 0; margin: 0; padding: 0; min-width: 0; display: grid; gap: 1.1rem; }
+.etapa[hidden] { display: none; }
+.etapa legend { font-weight: 700; color: var(--petroleo-900); font-size: 1rem; padding: 0; margin-bottom: .1rem; }
+.etapa + .etapa { margin-top: .5rem; padding-top: 1.25rem; border-top: 1px solid var(--borda); }
+.etapas, .etapa__botoes [data-avancar], .etapa__botoes [data-voltar] { display: none; }
+.etapas-ligadas .etapas { display: flex; }
+.etapas-ligadas .etapa + .etapa { margin-top: 0; padding-top: 0; border-top: 0; }
+.etapas-ligadas .etapa legend { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
+.etapas-ligadas .etapa__botoes [data-avancar], .etapas-ligadas .etapa__botoes [data-voltar] { display: inline-flex; }
+.etapa__botoes { display: flex; gap: .6rem; }
+.etapa__botoes .botao--principal { flex: 1; padding: .85rem; }
+.etapas { list-style: none; margin: 0 0 .25rem; padding: 0; gap: .35rem; counter-reset: e; }
+.etapas li { flex: 1; display: flex; flex-direction: column; gap: .35rem; font-size: .75rem; font-weight: 600; color: var(--tinta-55); }
+.etapas li::before { content: ""; height: 4px; border-radius: 4px; background: var(--areia-200); }
+.etapas li span { display: none; }
+.etapas li.feita::before { background: var(--petroleo-700); }
+.etapas li.atual::before { background: var(--coral-botao); }
+.etapas li.atual { color: var(--petroleo-900); }

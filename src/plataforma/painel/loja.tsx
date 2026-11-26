@@ -6,6 +6,8 @@ import { apagar, arquivoEnviado, guardarImagem } from '../../lib/arquivos'
 import { urlImagem } from '../../lib/lojas'
 import { enderecoVisivel } from '../../lib/dominio'
 import { conferirSenha, hashSenha } from '../../lib/seguranca'
+import { problemaNaSenha } from '../../lib/protecao'
+import { fecharOutrasSessoes } from '../../lib/sessao'
 
 /** Combinações testadas para contraste do texto branco sobre o botão. */
 const PALETAS = [
@@ -270,7 +272,7 @@ export function rotasLoja(app: AppPainel) {
         <Cartao titulo="Trocar senha">
           <form method="post" action="/painel/conta/senha" class="form">
             <Campo rotulo="Senha atual" nome="atual" tipo="password" obrigatorio autocomplete="current-password" />
-            <Campo rotulo="Nova senha" nome="nova" tipo="password" obrigatorio min={8} autocomplete="new-password" ajuda="Pelo menos 8 caracteres." />
+            <Campo rotulo="Nova senha" nome="nova" tipo="password" obrigatorio min={8} max={128} autocomplete="new-password" ajuda="Pelo menos 8 caracteres. Trocar a senha encerra as outras sessões abertas." />
             <Botao tipo="secundario">Trocar senha</Botao>
           </form>
         </Cartao>
@@ -291,11 +293,16 @@ export function rotasLoja(app: AppPainel) {
     const nova = String(f.nova ?? '')
     if (!u || !(await conferirSenha(String(f.atual ?? ''), u.senha_hash))) {
       avisar(c, 'A senha atual não confere.', 'erro')
-    } else if (nova.length < 8) {
-      avisar(c, 'A nova senha precisa de pelo menos 8 caracteres.', 'erro')
     } else {
-      await c.env.DB.prepare('UPDATE usuarios SET senha_hash = ? WHERE id = ?').bind(await hashSenha(nova), c.get('usuario').id).run()
-      avisar(c, 'Senha trocada.')
+      const problema = await problemaNaSenha(nova, c.get('usuario').email)
+      if (problema) {
+        avisar(c, problema, 'erro')
+      } else {
+        await c.env.DB.prepare('UPDATE usuarios SET senha_hash = ? WHERE id = ?').bind(await hashSenha(nova), c.get('usuario').id).run()
+        // Quem sabia a senha antiga perde o acesso agora, em qualquer aparelho.
+        await fecharOutrasSessoes(c, c.get('usuario').id)
+        avisar(c, 'Senha trocada. As outras sessões abertas foram encerradas.')
+      }
     }
     return c.redirect('/painel/conta')
   })

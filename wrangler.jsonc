@@ -29,21 +29,26 @@
     "DOMINIO_RAIZ": "lojinhapronta.com.br",
     // Endereço do painel. Trocar por https://app.lojinhapronta.com.br quando o
     // domínio estiver no Cloudflare.
-    "APP_URL": "https://lojinha-pronta.okaiquemota.workers.dev",
+    "APP_URL": "https://app.lojinhapronta.com.br",
     "SITE_URL": "https://lojinhapronta.com.br",
     "EMAIL_REMETENTE": "pedidos@lojinhapronta.com.br",
     "DIAS_TESTE": "7",
     // "nao" enquanto o domínio não usa o DNS do Cloudflare: as lojas abrem em
     // app.lojinhapronta.com.br/loja/<nome>. Virar para "sim" depois.
-    "SUBDOMINIOS_ATIVOS": "nao"
+    "SUBDOMINIOS_ATIVOS": "sim",
+    // Anti-robô (Turnstile) das telas de acesso. A chave pública fica aqui; o
+    // segredo, em TURNSTILE_SECRET. Sem os dois, fica desligado.
+    "TURNSTILE_SITEKEY": "0x4AAAAAAGUEP7dLhCXWzONU"
   },
 
   // Os subdomínios das lojas. Só funcionam depois que o domínio passar a usar o
   // DNS do Cloudflare (ver LEIA-ME, "Colocar no ar").
-  // "routes": [
-  //   { "pattern": "app.lojinhapronta.com.br", "custom_domain": true },
-  //   { "pattern": "*.lojinhapronta.com.br/*", "zone_name": "lojinhapronta.com.br" }
-  // ],
+  "routes": [
+    { "pattern": "app.lojinhapronta.com.br", "custom_domain": true },
+    // A raiz só passa pelo Worker com a nuvem laranja ligada no registro A.
+    { "pattern": "lojinhapronta.com.br/*", "zone_name": "lojinhapronta.com.br" },
+    { "pattern": "*.lojinhapronta.com.br/*", "zone_name": "lojinhapronta.com.br" }
+  ],
 
   "observability": { "enabled": true }
 }

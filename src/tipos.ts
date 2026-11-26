@@ -20,6 +20,9 @@ export type Env = {
   MP_CLIENT_ID?: string
   MP_CLIENT_SECRET?: string
   RESEND_API_KEY?: string
+  /** Turnstile (anti-robô): chave pública e segredo do widget. Sem os dois, fica desligado. */
+  TURNSTILE_SITEKEY?: string
+  TURNSTILE_SECRET?: string
   /** Só desenvolvimento: Mercado Pago e Stripe de mentira em http://127.0.0.1:porta */
   MP_API_TESTE?: string
   STRIPE_API_TESTE?: string

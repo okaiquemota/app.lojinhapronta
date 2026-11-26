@@ -36,6 +36,27 @@ plataforma.use('*', async (c, next) => {
   c.header('X-Frame-Options', 'DENY')
   c.header('Referrer-Policy', 'strict-origin-when-cross-origin')
   c.header('X-Content-Type-Options', 'nosniff')
+  c.header('Permissions-Policy', 'camera=(), microphone=(), geolocation=(), payment=()')
+  c.header('Cross-Origin-Opener-Policy', 'same-origin')
+  if (new URL(c.req.url).protocol === 'https:') c.header('Strict-Transport-Security', 'max-age=31536000; includeSubDomains')
+  // Só carrega script daqui e do anti-robô do Cloudflare; formulário só manda
+  // para cá ou para o checkout do Stripe.
+  c.header(
+    'Content-Security-Policy',
+    [
+      "default-src 'self'",
+      "script-src 'self' https://challenges.cloudflare.com",
+      "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
+      "font-src 'self' https://fonts.gstatic.com",
+      "img-src 'self' data: blob:",
+      "connect-src 'self'",
+      'frame-src https://challenges.cloudflare.com',
+      "form-action 'self' https://checkout.stripe.com https://billing.stripe.com https://auth.mercadopago.com.br",
+      "frame-ancestors 'none'",
+      "base-uri 'self'",
+      "object-src 'none'",
+    ].join('; '),
+  )
 })
 
 plataforma.route('/', publico)
@@ -73,6 +94,13 @@ export default {
 
     if (url.pathname.startsWith('/_lp/')) return servirEstatico(url.pathname.slice(5))
     if (url.pathname.startsWith('/i/')) return servirImagem(env, url.pathname.slice(3), req)
+
+    // Domínio principal: www vai para a raiz; a raiz mostra a apresentação, e o
+    // resto (cadastro, entrar, painel) mora em app., onde fica a sessão.
+    const host = url.hostname.toLowerCase()
+    const raiz = env.DOMINIO_RAIZ.toLowerCase()
+    if (host === `www.${raiz}`) return Response.redirect(`https://${raiz}${url.pathname}${url.search}`, 301)
+    if (host === raiz && url.pathname !== '/') return Response.redirect(`${env.APP_URL}${url.pathname}${url.search}`, 301)
 
     const alvo = resolverHost(url.hostname, env)
     if (alvo) {

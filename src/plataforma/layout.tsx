@@ -7,7 +7,7 @@ import { diasAte, plural } from '../lib/formato'
 import { ehAdmin } from '../lib/sessao'
 import { CaixaAviso, Icone, type Aviso } from './ui'
 
-const VERSAO = '1'
+const VERSAO = "3"
 
 export function Documento(p: PropsWithChildren<{ titulo: string; descricao?: string; indexar?: boolean; classe?: string }>) {
   return (
@@ -191,6 +191,10 @@ export function Painel(
 export function TelaCentral(p: PropsWithChildren<{ titulo: string; subtitulo?: Child; aviso?: Aviso | null; largo?: boolean }>) {
   return (
     <Documento titulo={`${p.titulo} · Lojinha Pronta`} classe="corpo-central">
+      <div class="central__aurora" aria-hidden="true">
+        <span></span>
+        <span></span>
+      </div>
       <div class={`central${p.largo ? ' central--largo' : ''}`}>
         <Marca />
         <div class="central__caixa">
