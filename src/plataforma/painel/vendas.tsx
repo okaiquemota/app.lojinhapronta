@@ -1,6 +1,6 @@
 import type { AppPainel, Ctx } from './comum'
 import { tela } from './comum'
-import { Botao, Cartao, Icone, Vazio, avisar } from '../ui'
+import { Abas, Botao, Busca, Cartao, Icone, Vazio, avisar } from '../ui'
 import { EtiquetaStatus, TabelaPedidos } from './inicio'
 import type { Pedido } from '../../tipos'
 import { dataHoraBR, reais } from '../../lib/formato'
@@ -8,6 +8,19 @@ import { enviarEmailsDoPedido, itensDoPedido, sincronizarPedido } from '../../li
 import { urlDaLoja } from '../../lib/dominio'
 
 const METODO: Record<string, string> = { pix: 'Pix', cartao: 'Cartão', boleto: 'Boleto', gratis: 'Grátis' }
+
+/** O status cru do Mercado Pago, em português. */
+const STATUS_MP: Record<string, string> = {
+  pending: 'Pendente',
+  in_process: 'Em análise',
+  authorized: 'Autorizado, aguardando captura',
+  approved: 'Aprovado',
+  rejected: 'Recusado',
+  cancelled: 'Cancelado',
+  refunded: 'Reembolsado',
+  charged_back: 'Estornado no cartão',
+  in_mediation: 'Em disputa',
+}
 
 async function pedidoDa(c: Ctx, id: string): Promise<Pedido | null> {
   return c.env.DB.prepare('SELECT * FROM pedidos WHERE id = ? AND loja_id = ?').bind(id, c.get('loja').id).first<Pedido>()
@@ -38,30 +51,27 @@ export function rotasVendas(app: AppPainel) {
       .bind(...args)
       .all<Pedido>()
 
-    const aba = (valor: string | null, texto: string) => (
-      <a href={`/painel/pedidos${valor ? `?ver=${valor}` : ''}`} class={(c.req.query('ver') ?? null) === valor ? 'ativo' : undefined}>
-        {texto}
-      </a>
-    )
+    const ver = c.req.query('ver') ?? null
+    const aba = (valor: string | null, texto: string) => ({ href: `/painel/pedidos${valor ? `?ver=${valor}` : ''}`, texto, ativo: ver === valor })
     return tela(
       c,
       { ativo: 'pedidos', titulo: 'Vendas' },
       <Cartao>
         <div class="barra-filtros">
-          <nav class="abas">
-            {aba(null, 'Todas')}
-            {aba('pagos', 'Pagas')}
-            {aba('pendentes', 'Aguardando pagamento')}
-          </nav>
-          <form method="get" class="busca-painel">
-            {c.req.query('ver') && <input type="hidden" name="ver" value={c.req.query('ver')} />}
-            <input type="search" name="q" value={busca} placeholder="Nº, nome ou e-mail" aria-label="Buscar venda" />
-          </form>
+          <Abas rotulo="Filtrar vendas" itens={[aba(null, 'Todas'), aba('pagos', 'Pagas'), aba('pendentes', 'Aguardando pagamento')]} />
+          <Busca valor={busca} placeholder="Nº, nome ou e-mail" rotulo="Buscar venda" manter={{ ver: ver ?? undefined }} />
         </div>
         {r.results.length ? (
           <TabelaPedidos pedidos={r.results} />
+        ) : busca || filtro ? (
+          <Vazio titulo="Nenhuma venda encontrada" icone="busca">
+            <p>Confira o número, o nome ou o e-mail, ou veja todas as vendas.</p>
+            <Botao href="/painel/pedidos" tipo="secundario">
+              Ver todas
+            </Botao>
+          </Vazio>
         ) : (
-          <Vazio titulo={busca || filtro ? 'Nenhuma venda encontrada' : 'Nenhuma venda ainda'}>
+          <Vazio titulo="Nenhuma venda ainda" icone="pedidos">
             <p>Divulgue o link da loja no Instagram e no WhatsApp. Cada compra aparece aqui na hora.</p>
           </Vazio>
         )}
@@ -93,23 +103,20 @@ export function rotasVendas(app: AppPainel) {
               </li>
             ))}
             <li class="itens-pedido__total">
-              <span>Total</span>
+              <strong>Total</strong>
               <strong>{reais(p.total_centavos)}</strong>
             </li>
             {p.taxa_centavos > 0 && (
               <li class="texto-suave">
                 <span>Taxa da plataforma</span>
-                <span>− {reais(p.taxa_centavos)}</span>
+                <span>−{reais(p.taxa_centavos)}</span>
               </li>
             )}
           </ul>
         </Cartao>
 
         <div>
-          <Cartao titulo="Situação">
-            <p>
-              <EtiquetaStatus status={p.status} />
-            </p>
+          <Cartao titulo="Situação" acao={<EtiquetaStatus status={p.status} />}>
             <dl class="dados">
               <dt>Feito em</dt>
               <dd>{dataHoraBR(p.criado_em)}</dd>
@@ -133,14 +140,14 @@ export function rotasVendas(app: AppPainel) {
               )}
               {p.status === 'pendente' && p.mp_status && (
                 <>
-                  <dt>Mercado Pago diz</dt>
-                  <dd>{p.mp_status}</dd>
+                  <dt>No Mercado Pago</dt>
+                  <dd>{STATUS_MP[p.mp_status] ?? p.mp_status}</dd>
                 </>
               )}
             </dl>
             {p.status === 'pendente' && p.total_centavos > 0 && (
-              <form method="post" action={`/painel/pedidos/${p.id}/verificar`}>
-                <Botao tipo="secundario" pequeno>
+              <form method="post" action={`/painel/pedidos/${p.id}/verificar`} data-enviando="Consultando…">
+                <Botao tipo="secundario" pequeno icone="atualizar">
                   Consultar o Mercado Pago agora
                 </Botao>
               </form>
@@ -159,17 +166,20 @@ export function rotasVendas(app: AppPainel) {
               <dd>{p.email_enviado_em ? `enviado em ${dataHoraBR(p.email_enviado_em)}` : p.status === 'pago' ? 'não enviado' : '—'}</dd>
             </dl>
             {p.status === 'pago' && (
-              <div class="pilha">
-                <button type="button" class="botao botao--secundario botao--pequeno" data-copiar={link}>
-                  <Icone nome="copiar" /> Copiar link dos arquivos
-                </button>
-                <form method="post" action={`/painel/pedidos/${p.id}/reenviar`}>
-                  <Botao tipo="fantasma" pequeno>
-                    Reenviar e-mail para a cliente
-                  </Botao>
-                </form>
+              <>
+                <hr />
+                <div class="grupo-botoes">
+                  <button type="button" class="botao botao--secundario botao--pequeno" data-copiar={link}>
+                    <Icone nome="copiar" /> Copiar link dos arquivos
+                  </button>
+                  <form method="post" action={`/painel/pedidos/${p.id}/reenviar`} data-enviando="Enviando…">
+                    <Botao tipo="secundario" pequeno icone="email">
+                      Reenviar e-mail
+                    </Botao>
+                  </form>
+                </div>
                 <p class="campo__ajuda">O link leva direto aos downloads. Mande pelo WhatsApp se o e-mail não chegou.</p>
-              </div>
+              </>
             )}
           </Cartao>
         </div>

@@ -24,6 +24,7 @@ import { reconciliarAssinaturas } from './lib/assinaturas'
 import { usarApiDeTeste } from './lib/mercadopago'
 import { usarStripeDeTeste } from './lib/stripe'
 import { cabecalhosPlataforma } from './lib/cabecalhos'
+import { PaginaErro } from './plataforma/layout'
 
 const plataforma = new Hono<{ Bindings: Env }>()
 
@@ -42,10 +43,12 @@ plataforma.route('/', publico)
 plataforma.route('/painel', painel)
 plataforma.route('/admin', admin)
 plataforma.route('/webhooks', webhooks)
-plataforma.notFound((c) => c.text('Página não encontrada', 404))
+plataforma.notFound((c) =>
+  c.html(<PaginaErro titulo="Página não encontrada" texto="O endereço pode ter mudado ou o item foi excluído." />, 404),
+)
 plataforma.onError((e, c) => {
   console.error('[plataforma]', e)
-  return c.text('Algo deu errado do nosso lado. Tente de novo em instantes.', 500)
+  return c.html(<PaginaErro titulo="Algo deu errado" texto="O erro foi do nosso lado. Tente de novo em instantes." />, 500)
 })
 
 vitrine.onError((e, c) => {
