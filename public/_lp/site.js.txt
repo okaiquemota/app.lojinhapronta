@@ -1,0 +1,86 @@
+// Comportamento da apresentação, o mesmo de lojinhapronta.com.br:
+// barra do topo que clareia ao rolar, menu do celular, seções que aparecem
+// ao rolar, perguntas em sanfona e o botão fixo do celular.
+;(() => {
+  const navbar = document.querySelector('.navbar')
+  const zap = document.querySelector('.zap-fixo')
+  const hero = document.querySelector('.hero')
+  const rolou = () => {
+    const y = window.scrollY
+    navbar?.classList.toggle('navbar--rolou', y > 24)
+    if (zap && hero) zap.classList.toggle('is-visivel', y > hero.offsetHeight * 0.7)
+  }
+  addEventListener('scroll', rolou, { passive: true })
+  rolou()
+
+  // menu do celular
+  const botao = document.querySelector('.navbar__hamburguer')
+  const menu = document.getElementById('menu-mobile')
+  const fechar = () => {
+    navbar.classList.remove('navbar--aberto')
+    botao.setAttribute('aria-expanded', 'false')
+    botao.setAttribute('aria-label', 'Abrir menu')
+    menu.hidden = true
+    document.body.style.overflow = ''
+  }
+  botao?.addEventListener('click', () => {
+    if (!menu.hidden) return fechar()
+    navbar.classList.add('navbar--aberto')
+    botao.setAttribute('aria-expanded', 'true')
+    botao.setAttribute('aria-label', 'Fechar menu')
+    menu.hidden = false
+    document.body.style.overflow = 'hidden'
+  })
+  menu?.addEventListener('click', (e) => {
+    if (e.target.closest('a')) fechar()
+  })
+
+  // seções aparecem ao entrar na tela
+  const revelar = document.querySelectorAll('.reveal')
+  if ('IntersectionObserver' in window && !matchMedia('(prefers-reduced-motion: reduce)').matches) {
+    const obs = new IntersectionObserver(
+      (entradas) => {
+        for (const e of entradas) {
+          if (e.isIntersecting) {
+            e.target.setAttribute('data-visivel', '')
+            obs.unobserve(e.target)
+          }
+        }
+      },
+      { rootMargin: '0px 0px -8% 0px', threshold: 0.12 },
+    )
+    revelar.forEach((el) => obs.observe(el))
+  } else {
+    revelar.forEach((el) => el.setAttribute('data-visivel', ''))
+  }
+
+  // link da seção atual aceso no topo
+  const links = [...document.querySelectorAll('.navbar__link')]
+  const secoes = links.map((a) => document.querySelector(a.getAttribute('href'))).filter(Boolean)
+  if ('IntersectionObserver' in window) {
+    const obs = new IntersectionObserver(
+      (entradas) => {
+        for (const e of entradas) {
+          if (!e.isIntersecting) continue
+          links.forEach((a) => a.classList.toggle('is-ativo', a.getAttribute('href') === `#${e.target.id}`))
+        }
+      },
+      { rootMargin: '-45% 0px -50% 0px' },
+    )
+    secoes.forEach((s) => obs.observe(s))
+  }
+
+  // perguntas em sanfona: abre uma, fecha a outra
+  document.querySelectorAll('.faq__pergunta').forEach((b) =>
+    b.addEventListener('click', () => {
+      const item = b.closest('.faq__item')
+      const abrir = !item.classList.contains('is-aberto')
+      document.querySelectorAll('.faq__item.is-aberto').forEach((i) => {
+        i.classList.remove('is-aberto')
+        i.querySelector('.faq__pergunta').setAttribute('aria-expanded', 'false')
+      })
+      item.classList.toggle('is-aberto', abrir)
+      b.setAttribute('aria-expanded', String(abrir))
+    }),
+  )
+})()

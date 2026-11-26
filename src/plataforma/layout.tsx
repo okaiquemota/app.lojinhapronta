@@ -191,6 +191,10 @@ export function Painel(
 export function TelaCentral(p: PropsWithChildren<{ titulo: string; subtitulo?: Child; aviso?: Aviso | null; largo?: boolean }>) {
   return (
     <Documento titulo={`${p.titulo} · Lojinha Pronta`} classe="corpo-central">
+      <div class="central__aurora" aria-hidden="true">
+        <span></span>
+        <span></span>
+      </div>
       <div class={`central${p.largo ? ' central--largo' : ''}`}>
         <Marca />
         <div class="central__caixa">

@@ -118,8 +118,16 @@ button, input, select, textarea { font: inherit; color: inherit; }
 .acoes-form--fixa { position: sticky; top: 1.25rem; }
 .pilha { display: grid; gap: .5rem; justify-items: start; margin-top: 1rem; }
 
-/* ── telas centrais (entrar, cadastro) ────────────────────────────────── */
-.corpo-central { background: radial-gradient(ellipse at top, #fff 0%, var(--areia-50) 60%); }
+/* ── telas centrais (entrar, cadastro): o fundo escuro da landing ───────── */
+.corpo-central { position: relative; min-height: 100vh; background: var(--petroleo-900); overflow-x: hidden; }
+.central__aurora { position: fixed; inset: -20%; z-index: 0; filter: blur(90px); opacity: .85; pointer-events: none; }
+.central__aurora span { position: absolute; border-radius: 50%; }
+.central__aurora span:first-child { width: 46vmax; height: 46vmax; right: 2%; top: 4%; background: radial-gradient(circle, rgba(255, 107, 91, .55), transparent 65%); }
+.central__aurora span:last-child { width: 52vmax; height: 52vmax; left: 0; bottom: 0; background: radial-gradient(circle, rgba(89, 131, 146, .55), transparent 65%); }
+.corpo-central .central { position: relative; z-index: 1; }
+.corpo-central .marca { color: #fff; }
+.corpo-central .central__caixa { border: 0; box-shadow: 0 30px 70px rgba(4, 20, 28, .5), 0 6px 18px rgba(4, 20, 28, .3); border-radius: 22px; }
+.corpo-central .form__rodape a { color: var(--coral-botao); font-weight: 600; }
 .central { min-height: 100vh; display: flex; flex-direction: column; align-items: center; gap: 1.5rem; padding: clamp(2rem, 6vh, 4rem) 1rem 3rem; }
 .central__caixa { width: 100%; max-width: 26rem; background: #fff; border-radius: 18px; padding: clamp(1.5rem, 5vw, 2.25rem); box-shadow: var(--sombra); border: 1px solid var(--borda); }
 .central--largo .central__caixa { max-width: 32rem; }

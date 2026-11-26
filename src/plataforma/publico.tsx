@@ -4,7 +4,8 @@
  */
 import { Hono } from 'hono'
 import type { Env, Plano } from '../tipos'
-import { Documento, Marca, TelaCentral } from './layout'
+import { TelaCentral } from './layout'
+import { PaginaInicial } from './site'
 import { Botao, Campo, avisar, lerAviso, type Aviso } from './ui'
 import { planos as listarPlanos } from '../lib/lojas'
 import { agora, campo, emailValido, lista, reais, slugificar, somarDias } from '../lib/formato'
@@ -42,66 +43,7 @@ export function CartoesPlanos({ planos, acao }: { planos: Plano[]; acao?: (p: Pl
 
 app.get('/', async (c) => {
   if (await usuarioDaSessao(c)) return c.redirect('/painel')
-  const planos = await listarPlanos(c.env)
-  const dias = Number(c.env.DIAS_TESTE) || 7
-  return c.html(
-    <Documento titulo="Lojinha Pronta — crie sua loja de material digital" descricao="Monte sua loja de material digital em minutos. Pix, cartão e boleto, com entrega automática do arquivo." indexar>
-      <header class="site-topo">
-        <Marca />
-        <nav>
-          <a href="/entrar">Entrar</a>
-          <Botao href="/cadastro" pequeno>
-            Criar minha loja
-          </Botao>
-        </nav>
-      </header>
-      <main class="site">
-        <section class="heroi">
-          <p class="heroi__selo">{dias} dias grátis · sem cartão para testar</p>
-          <h1>Sua loja de material digital no ar hoje.</h1>
-          <p class="heroi__texto">
-            Você cadastra o PDF, a cliente paga por Pix, cartão ou boleto, e o arquivo chega sozinho no e-mail dela. Sem WordPress, sem plugin, sem
-            hospedagem para cuidar.
-          </p>
-          <div class="heroi__acoes">
-            <Botao href="/cadastro">Criar minha loja grátis</Botao>
-            <span class="heroi__nota">
-              Sua loja fica em <strong>suamarca.{c.env.DOMINIO_RAIZ}</strong>
-            </span>
-          </div>
-        </section>
-
-        <section class="passos">
-          <article>
-            <span>1</span>
-            <h3>Crie a loja</h3>
-            <p>Escolha o nome e o endereço. Em um minuto ela existe, com páginas de privacidade, termos e reembolso já escritas.</p>
-          </article>
-          <article>
-            <span>2</span>
-            <h3>Cadastre os materiais</h3>
-            <p>Foto, preço e o arquivo. Ponha suas cores e sua logo. A vitrine se monta sozinha, bonita no celular.</p>
-          </article>
-          <article>
-            <span>3</span>
-            <h3>Conecte o Mercado Pago</h3>
-            <p>Um botão. O dinheiro de cada venda cai direto na sua conta, e o arquivo é liberado no instante do pagamento.</p>
-          </article>
-        </section>
-
-        <section class="secao-planos" id="planos">
-          <h2>Planos</h2>
-          <p class="secao-planos__sub">Teste {dias} dias com tudo liberado. Depois, escolha o plano — cancele quando quiser.</p>
-          <CartoesPlanos planos={planos} />
-        </section>
-      </main>
-      <footer class="site-rodape">
-        <p>
-          Lojinha Pronta · <a href={c.env.SITE_URL}>{c.env.SITE_URL.replace(/^https?:\/\//, '')}</a>
-        </p>
-      </footer>
-    </Documento>,
-  )
+  return c.html(<PaginaInicial env={c.env} planos={await listarPlanos(c.env)} />)
 })
 
 // ── criar loja ─────────────────────────────────────────────────────────────
