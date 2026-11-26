@@ -85,8 +85,9 @@ Abra <http://localhost:8787>, crie uma loja e veja a vitrine em
 ## Colocar no ar
 
 **Já feito (25/11/2026):** banco D1 e bucket R2 criados, esquema aplicado,
-`SEGREDO_APP` cadastrado e o Worker publicado em
-<https://lojinha-pronta.okaiquemota.workers.dev>. Os passos abaixo ficam como
+`SEGREDO_APP` e `STRIPE_SECRET_KEY` cadastrados, domínio no Cloudflare e o
+Worker publicado em <https://app.lojinhapronta.com.br>, com as lojas em
+`<nome>.lojinhapronta.com.br`. Os passos abaixo ficam como
 referência para refazer do zero.
 
 ### 1. Banco, arquivos e segredos (uma vez)
