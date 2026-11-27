@@ -5,7 +5,7 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import { centavosDeTexto, centavosParaCampo, emailValido, normalizarWhatsapp, reais, slugificar, tamanhoArquivo, whatsappVisivel } from '../src/lib/formato'
-import { resolverHost, slugValido, urlDaLoja } from '../src/lib/dominio'
+import { resolverHost, slugDoNome, slugValido, urlDaLoja } from '../src/lib/dominio'
 import { situacao, situacaoDaAssinatura } from '../src/lib/lojas'
 import { abrirAssinado, assinar, cifrar, conferirSenha, decifrar, hashSenha } from '../src/lib/seguranca'
 import { resumir } from '../src/lib/texto'
@@ -164,5 +164,23 @@ describe('e-mail', () => {
     const html = moldeEmail({ cor: 'red;background:url(x)', titulo: '<script>', paragrafos: [], rodape: '' })
     assert.ok(html.includes('&lt;script&gt;'))
     assert.ok(!html.includes('url(x)'))
+  })
+})
+
+describe('endereço automático no cadastro', () => {
+  it('sai do nome da loja', () => {
+    assert.equal(slugDoNome('Ateliê da Ana'), 'atelie-da-ana')
+    assert.equal(slugDoNome('Ateliê da Ana', 2), 'atelie-da-ana-2')
+  })
+  it('é sempre um endereço válido', () => {
+    for (const nome of ['Bo', 'app', 'Loja', '!!!', '', 'x'.repeat(80), 'a-'.repeat(30)]) {
+      for (const n of [1, 2, 37, 4321]) {
+        const s = slugDoNome(nome, n)
+        assert.equal(slugValido(s), null, `${JSON.stringify(nome)} #${n} → ${s}`)
+      }
+    }
+    assert.equal(slugDoNome('Bo'), 'loja-bo')
+    assert.equal(slugDoNome('app'), 'loja-app')
+    assert.equal(slugDoNome('!!!'), 'minha-loja')
   })
 })
