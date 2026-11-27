@@ -63,6 +63,7 @@
   /* sombra: só no que flutua (menu aberto, diálogo, barra fixa) ------------- */
   --sombra-1: 0 1px 2px rgb(20 25 28 / .06);
   --sombra-2: 0 12px 32px -12px rgb(20 25 28 / .22), 0 2px 6px rgb(20 25 28 / .05);
+  --veu: rgb(20 25 28 / .36); /* atrás de diálogo e menu aberto */
 
   /* cor: neutros (todos os textos passam no AA, 4,5:1, inclusive em --fundo-2) */
   --texto: #15191c;

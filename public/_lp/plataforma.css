@@ -212,7 +212,7 @@ hr { border: 0; border-top: 1px solid var(--borda); margin: 0; }
   border: 1px solid var(--borda); border-radius: var(--r-4);
   background: var(--superficie); color: var(--texto); box-shadow: var(--sombra-2);
 }
-.dialogo::backdrop { background: rgb(20 25 28 / .4); }
+.dialogo::backdrop { background: var(--veu); }
 .dialogo__corpo { display: grid; gap: var(--e-2); padding: var(--e-6) var(--e-6) var(--e-4); }
 .dialogo__corpo h2 { font-size: var(--t-4); }
 .dialogo__corpo p { color: var(--texto-2); }
@@ -332,7 +332,7 @@ hr { border: 0; border-top: 1px solid var(--borda); margin: 0; }
   }
   .lateral__fechar { display: inline-grid; }
   .menu-chave:checked ~ .lateral { visibility: visible; transform: none; box-shadow: var(--sombra-2); }
-  .menu-chave:checked ~ .veu { display: block; position: fixed; inset: 0; z-index: 35; background: rgb(20 25 28 / .32); }
+  .menu-chave:checked ~ .veu { display: block; position: fixed; inset: 0; z-index: 35; background: var(--veu); }
   .menu-chave:focus-visible ~ .principal .barra-celular__menu { outline: 2px solid var(--foco); outline-offset: 2px; }
   .principal { margin-left: 0; }
   .barra-celular {
