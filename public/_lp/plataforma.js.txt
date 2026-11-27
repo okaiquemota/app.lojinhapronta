@@ -163,48 +163,52 @@ document.addEventListener('submit', (e) => {
   travar(e.submitter || form.querySelector('button[type=submit], button:not([type])'), form.dataset.enviando)
 })
 
-// Endereço da loja: sugere a partir do nome e diz se está livre.
+// Endereço da loja (opcional): em branco, mostra o que vai sair do nome;
+// preenchido, diz se está livre.
 ;(() => {
   const nome = document.querySelector('input[name=loja]')
   const slug = document.querySelector('input[name=slug]')
   const status = document.querySelector('[data-slug-status]')
   if (!slug || !status) return
   const padrao = status.textContent
-  let mexeu = !!slug.value
+  const sufixo = slug.parentElement.querySelector('.campo__sufixo')?.textContent || ''
   const limpar = (t) =>
     t.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 40)
   let timer
+  let pedido = 0
+  const mostrar = (texto, livre) => {
+    status.textContent = texto
+    if (livre) status.parentElement.dataset.livre = livre
+    else status.parentElement.removeAttribute('data-livre')
+  }
   const conferir = () => {
     clearTimeout(timer)
     const v = limpar(slug.value)
-    if (!v) {
-      status.textContent = padrao
-      status.parentElement.removeAttribute('data-livre')
-      return
-    }
+    const n = nome ? nome.value.trim() : ''
+    if (!v && !n) return mostrar(padrao)
+    const url = v ? `/api/endereco?s=${encodeURIComponent(v)}` : `/api/endereco?nome=${encodeURIComponent(n)}`
+    const este = ++pedido
     timer = setTimeout(async () => {
       try {
-        const r = await fetch(`/api/endereco?s=${encodeURIComponent(v)}`).then((r) => r.json())
-        status.textContent = r.livre ? `${r.slug} está livre` : r.motivo
-        status.parentElement.dataset.livre = r.livre ? 'sim' : 'nao'
+        const r = await fetch(url).then((r) => r.json())
+        if (este !== pedido) return
+        if (r.auto) {
+          slug.placeholder = r.slug
+          mostrar(`Sua loja vai ficar em ${r.slug}${sufixo}. Se preferir outro, escreva aqui.`)
+        }
+        else mostrar(r.livre ? `${r.slug} está livre` : r.motivo, r.livre ? 'sim' : 'nao')
       } catch {
         // Sem resposta, volta ao texto de ajuda: o servidor confere ao enviar.
-        status.textContent = padrao
-        status.parentElement.removeAttribute('data-livre')
+        if (este === pedido) mostrar(padrao)
       }
     }, 300)
   }
   nome?.addEventListener('input', () => {
-    if (!mexeu) {
-      slug.value = limpar(nome.value)
-      conferir()
-    }
+    if (!slug.value.trim()) conferir()
   })
-  slug.addEventListener('input', () => {
-    mexeu = true
-    conferir()
-  })
+  slug.addEventListener('input', conferir)
   slug.addEventListener('blur', () => (slug.value = limpar(slug.value)))
+  if (slug.value || nome?.value) conferir()
 })()
 
 // Cores: paletas prontas, prévia ao vivo e alerta de contraste.
