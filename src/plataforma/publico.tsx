@@ -54,6 +54,12 @@ export function CartoesPlanos({ planos, acao }: { planos: Plano[]; acao?: (p: Pl
 
 app.get('/', async (c) => {
   if (await usuarioDaSessao(c)) return c.redirect('/painel')
+  // A apresentação só existe no domínio raiz (lojinhapronta.com.br). Em app. a
+  // raiz leva para lá. No computador (APP_URL em localhost) ela continua aqui.
+  const raiz = c.env.DOMINIO_RAIZ.toLowerCase()
+  const host = new URL(c.req.url).hostname.toLowerCase()
+  const appNoAr = new URL(c.env.APP_URL).hostname.toLowerCase().endsWith(`.${raiz}`)
+  if (appNoAr && host !== raiz) return c.redirect(`${c.env.SITE_URL}/${new URL(c.req.url).search}`, 302)
   return c.html(<PaginaInicial env={c.env} planos={await listarPlanos(c.env)} />)
 })
 

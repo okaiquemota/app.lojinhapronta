@@ -105,6 +105,12 @@ html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
 body { margin: 0; -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; }
 img, svg, video { display: block; max-width: 100%; }
 button, input, select, textarea { font: inherit; color: inherit; }
+/* Tela de toque: campo com letra menor que 16px faz o iPhone dar zoom ao tocar.
+   Vale para todo campo de texto do painel, da vitrine e da apresentação. */
+@media (pointer: coarse) {
+  input:not([type=checkbox]):not([type=radio]):not([type=range]):not([type=color]):not([type=file]),
+  select, textarea { font-size: max(1rem, 1em) !important; }
+}
 [hidden] { display: none !important; }
 :focus-visible { outline: 2px solid var(--foco); outline-offset: 2px; }
 .sr-only {

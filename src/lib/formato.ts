@@ -1,9 +1,9 @@
-/** "R$ 1.234,56" a partir de centavos. Sem Intl de propósito: igual em todo lugar. */
+/** "R$ 1.234,56" a partir de centavos, com espaço que não quebra (o "R$" nunca fica sozinho no fim da linha). Sem Intl de propósito: igual em todo lugar. */
 export function reais(centavos: number): string {
   const neg = centavos < 0
   const v = Math.abs(Math.round(centavos))
   const inteiro = Math.floor(v / 100).toString().replace(/\B(?=(\d{3})+(?!\d))/g, '.')
-  return `${neg ? '-' : ''}R$ ${inteiro},${String(v % 100).padStart(2, '0')}`
+  return `${neg ? '-' : ''}R$\u00a0${inteiro},${String(v % 100).padStart(2, '0')}`
 }
 
 /** "19,90" · "19.90" · "1.234,56" · "R$ 19" → centavos. Inválido → null. */
