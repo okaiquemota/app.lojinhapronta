@@ -7,6 +7,8 @@
     "dev": "wrangler dev",
     "deploy": "wrangler deploy",
     "checar": "tsc --noEmit",
+    "testar": "esbuild testes/*.test.ts --bundle --platform=node --format=esm --outdir=.testes --log-level=warning && node --test '.testes/*.test.js'",
+    "test": "npm run testar",
     "banco:local": "wrangler d1 migrations apply DB --local",
     "banco:remoto": "wrangler d1 migrations apply DB --remote"
   },
@@ -15,6 +17,7 @@
   },
   "devDependencies": {
     "@cloudflare/workers-types": "5.20261110.1",
+    "esbuild": "0.28.2",
     "typescript": "5.9.3",
     "wrangler": "4.160.0"
   }

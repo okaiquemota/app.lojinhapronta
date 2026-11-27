@@ -2,6 +2,9 @@
 SEGREDO_APP=troque-por-um-texto-aleatorio-de-pelo-menos-32-caracteres
 APP_URL=http://localhost:8787
 ADMIN_EMAILS=voce@exemplo.com
+# No computador as lojas abrem pelo caminho: http://localhost:8787/loja/<endereço>/
+# (com "sim", esse caminho redireciona para o subdomínio de produção).
+SUBDOMINIOS_ATIVOS=nao
 
 # Para testar venda e mensalidade sem dinheiro de verdade, rode
 #   python3 ferramentas/mp-falso.py
