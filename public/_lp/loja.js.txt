@@ -1,11 +1,12 @@
 // Vitrine: só o que melhora a experiência. Sem este arquivo, tudo continua funcionando.
+
+// Galeria: a miniatura troca a foto grande.
 document.addEventListener('click', (e) => {
   const mini = e.target.closest('[data-imagem]')
-  if (mini) {
-    const principal = mini.closest('[data-galeria]').querySelector('.galeria__principal img')
-    if (principal) principal.src = mini.dataset.imagem
-    mini.closest('ul').querySelectorAll('button').forEach((b) => b.classList.toggle('ativa', b === mini))
-  }
+  if (!mini) return
+  const principal = mini.closest('[data-galeria]').querySelector('.galeria__principal img')
+  if (principal) principal.src = mini.dataset.imagem
+  mini.closest('ul').querySelectorAll('button').forEach((b) => b.setAttribute('aria-pressed', String(b === mini)))
 })
 
 document.addEventListener('change', (e) => {
@@ -13,14 +14,64 @@ document.addEventListener('change', (e) => {
 })
 
 // Botão de enviar trava depois do clique: ninguém gera dois pedidos sem querer.
+// O setTimeout deixa o navegador montar os dados antes (botão desabilitado não
+// manda o próprio name/value).
 document.addEventListener('submit', (e) => {
   const form = e.target
-  if (!form.dataset.enviando) return
-  const botao = form.querySelector('button:not([type=button])')
-  if (botao) {
-    setTimeout(() => {
-      botao.disabled = true
-      botao.textContent = form.dataset.enviando
-    }, 0)
-  }
+  if (!form.hasAttribute('data-enviando')) return
+  const botao = e.submitter || form.querySelector('button:not([type=button])')
+  if (!botao) return
+  setTimeout(() => {
+    botao.disabled = true
+    botao.setAttribute('aria-busy', 'true')
+    if (form.dataset.enviando) botao.textContent = form.dataset.enviando
+  }, 0)
 })
+// Voltar pela seta do navegador traz a página da memória: destrava.
+addEventListener('pageshow', (e) => {
+  if (!e.persisted) return
+  document.querySelectorAll('button[aria-busy]').forEach((b) => {
+    b.disabled = false
+    b.removeAttribute('aria-busy')
+  })
+})
+
+// Pedido esperando o pagamento: pergunta de tempos em tempos e recarrega
+// quando mudar. (Sem JS, a página recarrega sozinha pelo <noscript>.)
+;(() => {
+  const pedido = document.querySelector('[data-situacao]')
+  if (!pedido) return
+  const url = pedido.dataset.situacao
+  const aviso = pedido.querySelector('[data-verificando]')
+  const inicio = Date.now()
+  const LIMITE = 15 * 60_000
+  let espera = 4000
+  const perguntar = async () => {
+    if (Date.now() - inicio > LIMITE) {
+      if (aviso) aviso.textContent = 'Ainda aguardando. Atualize a página daqui a pouco.'
+      return
+    }
+    if (document.visibilityState === 'visible') {
+      try {
+        const r = await fetch(url, { headers: { Accept: 'application/json' }, cache: 'no-store' })
+        const j = await r.json()
+        if (j.status && j.status !== 'pendente') return location.reload()
+      } catch {}
+    }
+    espera = Math.min(espera * 1.25, 15000)
+    setTimeout(perguntar, espera)
+  }
+  setTimeout(perguntar, espera)
+})()
+
+// Google Analytics, quando a lojista liga (sem script dentro da página).
+;(() => {
+  const id = document.body.dataset.ga4
+  if (!id) return
+  window.dataLayer = window.dataLayer || []
+  window.gtag = function () {
+    window.dataLayer.push(arguments)
+  }
+  window.gtag('js', new Date())
+  window.gtag('config', id)
+})()

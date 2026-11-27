@@ -8,7 +8,8 @@ import type { Context } from 'hono'
 import { getCookie, setCookie } from 'hono/cookie'
 import { raw } from 'hono/html'
 import type { Categoria, Env, Loja, Pedido, Produto, VarsLoja } from '../tipos'
-import { Bloco, CapaProduto, CartaoProduto, Garantias, Preco, Vitrine, ir, type Meta } from './layout'
+import { AvisoLoja, Bloco, CapaProduto, CartaoProduto, CoresDaLoja, Garantias, ICONES, Icone, IconeZap, Preco, Vitrine, ir, type Meta } from './layout'
+import { urlEstatico } from '../estaticos'
 import { Contato, Privacidade, Reembolso, Termos } from './legal'
 import { TextoRico, resumir } from '../lib/texto'
 import { lojaPorDominio, lojaPorSlug, situacao, urlImagem } from '../lib/lojas'
@@ -18,11 +19,14 @@ import { ErroVenda, criarPedido, itensDoPedido, pedidoPorToken, sincronizarPedid
 import { enviarEmail, escaparHtml, moldeEmail } from '../lib/email'
 import { registrarTentativa, tentativasRecentes } from '../lib/sessao'
 import { urlDaLoja } from '../lib/dominio'
+import { cabecalhosVitrine } from '../lib/cabecalhos'
 
 type C = Context<{ Bindings: Env; Variables: VarsLoja }>
 const app = new Hono<{ Bindings: Env; Variables: VarsLoja }>()
 
 // ── qual loja? ─────────────────────────────────────────────────────────────
+
+app.use('*', cabecalhosVitrine)
 
 app.use('*', async (c, next) => {
   const slug = c.req.header('x-lp-slug')
@@ -40,7 +44,8 @@ app.use('*', async (c, next) => {
   await next()
 })
 
-function NaoExiste({ env }: { env: Env }) {
+/** Página solta, sem cabeçalho de loja: loja inexistente ou fora do ar. */
+function TelaSimples(p: { titulo: string; loja?: Loja; children: any }) {
   return (
     <>
       {raw('<!doctype html>')}
@@ -49,53 +54,47 @@ function NaoExiste({ env }: { env: Env }) {
           <meta charset="utf-8" />
           <meta name="viewport" content="width=device-width, initial-scale=1" />
           <meta name="robots" content="noindex" />
-          <title>Loja não encontrada</title>
-          <link rel="stylesheet" href="/_lp/loja.css" />
+          <title>{p.titulo}</title>
+          <link rel="icon" href={p.loja?.logo_key ? urlImagem(p.loja.logo_key) : urlEstatico('favicon-loja.svg')} />
+          <link rel="stylesheet" href={urlEstatico('loja.css')} />
+          {p.loja && <CoresDaLoja loja={p.loja} />}
         </head>
-        <body class="tela-simples">
-          <div>
-            <h1>Não encontramos esta loja.</h1>
-            <p>Confira o endereço. Quer criar a sua?</p>
-            <a class="btn" href={env.SITE_URL}>
-              Conhecer a Lojinha Pronta
-            </a>
-          </div>
+        <body>
+          <main class="tela-simples">
+            <div>{p.children}</div>
+          </main>
         </body>
       </html>
     </>
   )
 }
 
+function NaoExiste({ env }: { env: Env }) {
+  return (
+    <TelaSimples titulo="Loja não encontrada">
+      <h1>Não encontramos esta loja</h1>
+      <p>Confira o endereço. Se quiser, crie a sua em poucos minutos.</p>
+      <a class="btn" href={env.SITE_URL}>
+        Conhecer a Lojinha Pronta
+      </a>
+    </TelaSimples>
+  )
+}
+
 function ForaDoAr({ loja }: { loja: Loja }) {
   return (
-    <>
-      {raw('<!doctype html>')}
-      <html lang="pt-BR">
-        <head>
-          <meta charset="utf-8" />
-          <meta name="viewport" content="width=device-width, initial-scale=1" />
-          <meta name="robots" content="noindex" />
-          <title>{loja.nome}</title>
-          <link rel="stylesheet" href="/_lp/loja.css" />
-          <style>{raw(`:root{--marca:${loja.cor_marca};--destaque:${loja.cor_destaque}}`)}</style>
-        </head>
-        <body class="tela-simples">
-          <div>
-            {loja.logo_key ? <img src={urlImagem(loja.logo_key)} alt={loja.nome} class="tela-simples__logo" /> : <p class="tela-simples__nome">{loja.nome}</p>}
-            <h1>Voltamos logo.</h1>
-            <p>A loja está fechada por um momento.</p>
-            {loja.whatsapp && (
-              <a class="btn" href={linkWhatsapp(loja.whatsapp, `Oi! Tentei entrar na loja ${loja.nome}.`)}>
-                Falar pelo WhatsApp
-              </a>
-            )}
-            <p class="tela-simples__rodape">
-              Já comprou? O link dos seus arquivos está no e-mail de confirmação.
-            </p>
-          </div>
-        </body>
-      </html>
-    </>
+    <TelaSimples titulo={loja.nome} loja={loja}>
+      {loja.logo_key ? <img src={urlImagem(loja.logo_key)} alt={loja.nome} class="tela-simples__logo" /> : <p class="tela-simples__nome">{loja.nome}</p>}
+      <h1>Voltamos logo</h1>
+      <p>A loja está fechada por um momento.</p>
+      {loja.whatsapp && (
+        <a class="btn btn--zap" href={linkWhatsapp(loja.whatsapp, `Oi! Tentei entrar na loja ${loja.nome}.`)}>
+          <IconeZap />
+          Falar pelo WhatsApp
+        </a>
+      )}
+      <p class="tela-simples__rodape">Já comprou? O link dos seus arquivos está no e-mail de confirmação.</p>
+    </TelaSimples>
   )
 }
 
@@ -171,6 +170,7 @@ app.get('/', async (c) => {
     c,
     {
       titulo: loja.nome,
+      secao: '/',
       descricao: loja.descricao || `Material digital da ${loja.nome}, para baixar na hora.`,
       canonica: absoluta(c, '/'),
       imagem: loja.banner_key ? `${new URL(c.req.url).origin}${urlImagem(loja.banner_key)}` : undefined,
@@ -178,17 +178,21 @@ app.get('/', async (c) => {
     },
     <>
       {loja.banner_key ? (
-        <a class="banner" href={linkBanner}>
-          <picture>
-            {loja.banner_celular_key && <source media="(max-width: 640px)" srcset={urlImagem(loja.banner_celular_key)} />}
-            <img src={urlImagem(loja.banner_key)} alt={loja.chamada_titulo || loja.nome} />
-          </picture>
-        </a>
+        <section class="banner">
+          {/* O banner é imagem: o título da página vai escrito para o Google e o leitor de tela. */}
+          <h1 class="sr-only">{loja.chamada_titulo || loja.nome}</h1>
+          <a href={linkBanner}>
+            <picture>
+              {loja.banner_celular_key && <source media="(max-width: 640px)" srcset={urlImagem(loja.banner_celular_key)} />}
+              <img src={urlImagem(loja.banner_key)} alt={loja.chamada_texto || loja.chamada_titulo || `Ver os produtos da ${loja.nome}`} />
+            </picture>
+          </a>
+        </section>
       ) : (
         <section class="chamada">
           <h1>{loja.chamada_titulo || loja.nome}</h1>
           <p>{loja.chamada_texto || loja.descricao || 'Material digital para baixar na hora.'}</p>
-          <a class="btn btn--claro" href={linkBanner}>
+          <a class="btn" href={linkBanner}>
             Ver os produtos
           </a>
         </section>
@@ -200,7 +204,12 @@ app.get('/', async (c) => {
             {cats.map((k) => (
               <li>
                 <a href={ir(base, `/categoria/${k.slug}`)}>
-                  <strong>{k.nome}</strong> <span>({contagem.get(k.id) ?? 0})</span>
+                  <strong>{k.nome}</strong>
+                  <span>
+                    {contagem.get(k.id) ?? 0}
+                    <span class="sr-only"> produtos</span>
+                  </span>
+                  <Icone d={ICONES.seguir} />
                 </a>
               </li>
             ))}
@@ -208,27 +217,22 @@ app.get('/', async (c) => {
         </Bloco>
       )}
 
-      <Bloco titulo={novidades.results.length ? 'Novidades' : undefined}>
-        {novidades.results.length ? (
-          <>
-            <ul class="grade">
-              {novidades.results.map((p) => (
-                <CartaoProduto produto={p} loja={loja} base={base} />
-              ))}
-            </ul>
-            <p class="centro">
-              <a class="btn btn--vazado" href={ir(base, '/produtos')}>
-                Ver a loja inteira
-              </a>
-            </p>
-          </>
-        ) : (
+      {novidades.results.length ? (
+        <Bloco titulo="Novidades" acao={<a href={ir(base, '/produtos')}>Ver todos</a>}>
+          <ul class="grade">
+            {novidades.results.map((p) => (
+              <CartaoProduto produto={p} loja={loja} base={base} />
+            ))}
+          </ul>
+        </Bloco>
+      ) : (
+        <Bloco>
           <div class="vazio">
-            <h2>Os produtos estão chegando.</h2>
+            <h2>Os produtos estão chegando</h2>
             <p>Volte em breve{loja.instagram ? ` ou acompanhe no Instagram @${loja.instagram}` : ''}.</p>
           </div>
-        )}
-      </Bloco>
+        </Bloco>
+      )}
 
       <Bloco class="bloco--fino">
         <Garantias />
@@ -266,20 +270,26 @@ async function listar(c: C, o: { categoria?: Categoria; q?: string }) {
     c,
     {
       titulo,
+      secao: o.categoria ? undefined : '/produtos',
       descricao: o.categoria ? `${o.categoria.nome} na ${loja.nome}: material digital para baixar na hora.` : `Todos os produtos da ${loja.nome}.`,
       canonica: absoluta(c, o.categoria ? `/categoria/${o.categoria.slug}` : '/produtos'),
       indexar: !o.q,
     },
     <Bloco>
-      <nav class="trilha">
-        <a href={ir(base, '/')}>Início</a> / <span>{titulo}</span>
+      <nav class="trilha" aria-label="Você está em">
+        <a href={ir(base, '/')}>Início</a>
+        <Icone d={ICONES.seguir} />
+        <span aria-current="page">{titulo}</span>
       </nav>
       <header class="listagem__topo">
-        <h1>{titulo}</h1>
+        <div>
+          <h1>{titulo}</h1>
+          <p class="nota">{r.results.length === 1 ? '1 produto' : `${r.results.length} produtos`}</p>
+        </div>
         <form method="get" class="ordem">
           {o.q && <input type="hidden" name="q" value={o.q} />}
           <label>
-            Ordenar
+            <span>Ordenar por</span>
             <select name="ordem" data-enviar-ao-mudar>
               <option value="">Relevância</option>
               <option value="menor" selected={ordem === 'menor'}>
@@ -291,17 +301,19 @@ async function listar(c: C, o: { categoria?: Categoria; q?: string }) {
             </select>
           </label>
           <noscript>
-            <button type="submit">Ok</button>
+            <button type="submit" class="btn btn--secundario btn--pequeno">
+              Ordenar
+            </button>
           </noscript>
         </form>
       </header>
       {cats.length > 0 && (
         <nav class="filtros" aria-label="Categorias">
-          <a href={ir(base, '/produtos')} class={!o.categoria ? 'ativo' : undefined}>
+          <a href={ir(base, '/produtos')} aria-current={!o.categoria ? 'page' : undefined}>
             Todos
           </a>
           {cats.map((k) => (
-            <a href={ir(base, `/categoria/${k.slug}`)} class={o.categoria?.id === k.id ? 'ativo' : undefined}>
+            <a href={ir(base, `/categoria/${k.slug}`)} aria-current={o.categoria?.id === k.id ? 'page' : undefined}>
               {k.nome}
             </a>
           ))}
@@ -315,10 +327,11 @@ async function listar(c: C, o: { categoria?: Categoria; q?: string }) {
         </ul>
       ) : (
         <div class="vazio">
-          <h2>{o.q ? `Nada encontrado para “${o.q}”.` : 'Nenhum produto aqui ainda.'}</h2>
-          <p>
-            <a href={ir(base, '/produtos')}>Ver todos os produtos</a>
-          </p>
+          <h2>{o.q ? `Nada encontrado para “${o.q}”` : 'Nenhum produto aqui ainda'}</h2>
+          <p>{o.q ? 'Tente outra palavra ou veja tudo o que a loja tem.' : 'Veja os outros produtos da loja.'}</p>
+          <a class="btn btn--secundario" href={ir(base, '/produtos')}>
+            Ver todos os produtos
+          </a>
         </div>
       )}
     </Bloco>,
@@ -349,7 +362,10 @@ app.get('/produto/:slug', async (c) => {
   const imagens = lista(p.imagens)
   const origem = new URL(c.req.url).origin
   const noCarrinho = lerCarrinho(c).includes(p.id)
+  const adicionado = noCarrinho && c.req.query('adicionado') === '1'
   const ext = (p.arquivo_nome ?? '').split('.').pop()?.toUpperCase()
+  // Produto pago numa loja sem Mercado Pago: avisa já aqui, não só no carrinho.
+  const vendeOnline = p.preco_centavos === 0 || !!(await contaConectada(c.env, loja.id))
 
   return pagina(
     c,
@@ -375,14 +391,16 @@ app.get('/produto/:slug', async (c) => {
     },
     <>
       <Bloco>
-        <nav class="trilha">
-          <a href={ir(base, '/')}>Início</a> /{' '}
+        <nav class="trilha" aria-label="Você está em">
+          <a href={ir(base, '/')}>Início</a>
+          <Icone d={ICONES.seguir} />
           {cat ? (
             <>
-              <a href={ir(base, `/categoria/${cat.slug}`)}>{cat.nome}</a> /{' '}
+              <a href={ir(base, `/categoria/${cat.slug}`)}>{cat.nome}</a>
+              <Icone d={ICONES.seguir} />
             </>
           ) : null}
-          <span>{p.nome}</span>
+          <span aria-current="page">{p.nome}</span>
         </nav>
         <div class="produto-pagina">
           <div class="galeria" data-galeria>
@@ -390,10 +408,10 @@ app.get('/produto/:slug', async (c) => {
               <CapaProduto produto={p} loja={loja} grande />
             </div>
             {imagens.length > 1 && (
-              <ul class="galeria__miniaturas">
+              <ul class="galeria__miniaturas" aria-label="Fotos do produto">
                 {imagens.map((k, i) => (
                   <li>
-                    <button type="button" data-imagem={urlImagem(k)} aria-label={`Foto ${i + 1}`} class={i === 0 ? 'ativa' : undefined}>
+                    <button type="button" data-imagem={urlImagem(k)} aria-label={`Ver foto ${i + 1}`} aria-pressed={i === 0 ? 'true' : 'false'}>
                       <img src={urlImagem(k)} alt="" loading="lazy" />
                     </button>
                   </li>
@@ -405,29 +423,63 @@ app.get('/produto/:slug', async (c) => {
             <h1>{p.nome}</h1>
             <Preco produto={p} grande />
             {p.resumo && <p class="compra__resumo">{p.resumo}</p>}
-            <form method="post" action={ir(base, '/carrinho')}>
-              <input type="hidden" name="produto" value={p.id} />
-              <button class="btn btn--comprar" name="ir" value="carrinho">
-                {p.preco_centavos === 0 ? 'Baixar grátis' : 'Comprar agora'}
-              </button>
-              {!noCarrinho && (
-                <button class="btn btn--vazado btn--largo" name="ir" value="ficar">
-                  Adicionar ao carrinho
+            {adicionado && (
+              <AvisoLoja tipo="ok" papel="status">
+                Adicionado ao carrinho. <a href={ir(base, '/carrinho')}>Ver o carrinho</a>
+              </AvisoLoja>
+            )}
+            {vendeOnline ? (
+              <form method="post" action={ir(base, '/carrinho')} class="compra__botoes" data-enviando="">
+                <input type="hidden" name="produto" value={p.id} />
+                <button class="btn btn--comprar" name="ir" value="carrinho">
+                  {p.preco_centavos === 0 ? 'Baixar grátis' : 'Comprar agora'}
                 </button>
-              )}
-            </form>
+                {noCarrinho ? (
+                  !adicionado && (
+                    <a class="btn btn--secundario btn--largo" href={ir(base, '/carrinho')}>
+                      Já está no carrinho · Ver carrinho
+                    </a>
+                  )
+                ) : (
+                  <button class="btn btn--secundario btn--largo" name="ir" value="ficar">
+                    Adicionar ao carrinho
+                  </button>
+                )}
+              </form>
+            ) : (
+              <div class="compra__botoes">
+                <AvisoLoja tipo="info">Esta loja ainda está ativando os pagamentos online.</AvisoLoja>
+                {loja.whatsapp ? (
+                  <a class="btn btn--zap btn--comprar" href={linkWhatsapp(loja.whatsapp, `Oi! Quero comprar: ${p.nome}`)} target="_blank" rel="noopener">
+                    <IconeZap />
+                    Comprar pelo WhatsApp
+                  </a>
+                ) : (
+                  <a class="btn btn--secundario btn--largo" href={ir(base, '/contato')}>
+                    Falar com a loja
+                  </a>
+                )}
+              </div>
+            )}
             <ul class="compra__fatos">
               <li>
+                <Icone d={ICONES.check} />
                 Arquivo digital{ext ? ` · ${ext}` : ''}
                 {p.arquivo_tamanho ? ` · ${tamanhoArquivo(p.arquivo_tamanho)}` : ''}
               </li>
-              <li>Liberado na hora, depois do pagamento</li>
-              <li>Pix, cartão em até 12× ou boleto</li>
+              <li>
+                <Icone d={ICONES.check} />
+                Liberado na hora, depois do pagamento
+              </li>
+              <li>
+                <Icone d={ICONES.check} />
+                Pix, cartão em até 12× ou boleto
+              </li>
             </ul>
           </div>
         </div>
         {p.descricao && (
-          <div class="descricao">
+          <div class="descricao texto">
             <h2>Descrição</h2>
             <TextoRico texto={p.descricao} />
           </div>
@@ -480,12 +532,14 @@ function TelaCarrinho({ c, produtos, erro, nome, email, pagamentosOk }: { c: C; 
     return (
       <Bloco>
         <div class="vazio">
-          <h1>Seu carrinho está vazio.</h1>
-          <p>
-            <a class="btn" href={ir(base, '/produtos')}>
-              Ver os produtos
-            </a>
-          </p>
+          <span class="vazio__icone">
+            <Icone d={ICONES.sacola} />
+          </span>
+          <h1>Seu carrinho está vazio</h1>
+          <p>Escolha um material e ele aparece aqui.</p>
+          <a class="btn" href={ir(base, '/produtos')}>
+            Ver os produtos
+          </a>
         </div>
       </Bloco>
     )
@@ -493,53 +547,55 @@ function TelaCarrinho({ c, produtos, erro, nome, email, pagamentosOk }: { c: C; 
   const podePagar = total === 0 || pagamentosOk
   return (
     <Bloco>
-      <h1>Carrinho</h1>
+      <h1 class="titulo-pagina">Carrinho</h1>
       <div class="carrinho">
-        <ul class="carrinho__itens">
-          {produtos.map((p) => (
-            <li>
-              <a href={ir(base, `/produto/${p.slug}`)} class="carrinho__capa">
-                <CapaProduto produto={p} loja={loja} />
-              </a>
-              <div>
-                <a href={ir(base, `/produto/${p.slug}`)}>{p.nome}</a>
-                <small>Arquivo digital</small>
-              </div>
-              <strong>{p.preco_centavos === 0 ? 'Grátis' : reais(p.preco_centavos)}</strong>
-              <form method="post" action={ir(base, '/carrinho')}>
-                <input type="hidden" name="produto" value={p.id} />
-                <button name="remover" value="1" class="carrinho__remover" aria-label={`Remover ${p.nome}`}>
-                  ×
-                </button>
-              </form>
-            </li>
-          ))}
-          <li class="carrinho__total">
+        <div>
+          <ul class="carrinho__itens">
+            {produtos.map((p) => (
+              <li>
+                <a href={ir(base, `/produto/${p.slug}`)} class="carrinho__capa" tabindex={-1} aria-hidden="true">
+                  <CapaProduto produto={p} loja={loja} />
+                </a>
+                <div class="carrinho__info">
+                  <a href={ir(base, `/produto/${p.slug}`)}>{p.nome}</a>
+                  <small>Arquivo digital</small>
+                </div>
+                <strong class="carrinho__preco">{p.preco_centavos === 0 ? 'Grátis' : reais(p.preco_centavos)}</strong>
+                <form method="post" action={ir(base, '/carrinho')} class="carrinho__remover">
+                  <input type="hidden" name="produto" value={p.id} />
+                  <button name="remover" value="1" class="botao-icone" aria-label={`Tirar ${p.nome} do carrinho`} title="Tirar do carrinho">
+                    <Icone d={ICONES.fechar} />
+                  </button>
+                </form>
+              </li>
+            ))}
+          </ul>
+          <p class="carrinho__total">
             <span>Total</span>
             <strong>{total === 0 ? 'Grátis' : reais(total)}</strong>
-          </li>
-        </ul>
+          </p>
+        </div>
 
         <div class="carrinho__finalizar">
           {podePagar ? (
-            <form method="post" action={ir(base, '/finalizar')} class="formulario" data-enviando="Indo para o pagamento…">
+            <form method="post" action={ir(base, '/finalizar')} class="formulario" data-enviando={total === 0 ? 'Liberando…' : 'Indo para o pagamento…'}>
               <h2>Para quem enviamos os arquivos?</h2>
               {erro && (
-                <p class="erro" role="alert">
+                <AvisoLoja tipo="erro" papel="alert">
                   {erro}
-                </p>
+                </AvisoLoja>
               )}
               <label>
-                Seu nome
+                <span>Seu nome</span>
                 <input name="nome" value={nome ?? ''} required maxlength={80} autocomplete="name" />
               </label>
               <label>
-                E-mail
-                <input name="email" type="email" value={email ?? ''} required maxlength={200} autocomplete="email" />
+                <span>E-mail</span>
+                <input name="email" type="email" value={email ?? ''} required maxlength={200} autocomplete="email" autocapitalize="none" spellcheck={false} />
               </label>
               <label>
-                Confirme o e-mail
-                <input name="email2" type="email" required maxlength={200} autocomplete="off" />
+                <span>Confirme o e-mail</span>
+                <input name="email2" type="email" required maxlength={200} autocomplete="off" autocapitalize="none" spellcheck={false} />
               </label>
               <p class="nota">O link dos arquivos chega neste e-mail. Confira com atenção.</p>
               <button class="btn btn--comprar">{total === 0 ? 'Receber meus arquivos' : 'Ir para o pagamento'}</button>
@@ -552,11 +608,19 @@ function TelaCarrinho({ c, produtos, erro, nome, email, pagamentosOk }: { c: C; 
             <div class="formulario">
               <h2>Pagamento indisponível</h2>
               <p>Esta loja ainda está ativando os pagamentos online.</p>
-              {loja.whatsapp && (
-                <a class="btn btn--comprar" href={linkWhatsapp(loja.whatsapp, `Oi! Quero comprar: ${produtos.map((p) => p.nome).join(', ')}`)}>
+              {loja.whatsapp ? (
+                <a class="btn btn--zap btn--comprar" href={linkWhatsapp(loja.whatsapp, `Oi! Quero comprar: ${produtos.map((p) => p.nome).join(', ')}`)} target="_blank" rel="noopener">
+                  <IconeZap />
                   Comprar pelo WhatsApp
                 </a>
+              ) : (
+                <a class="btn btn--comprar" href={ir(base, '/contato')}>
+                  Falar com a loja
+                </a>
               )}
+              <a class="link-simples centro" href={ir(base, '/produtos')}>
+                Continuar vendo os produtos
+              </a>
             </div>
           )}
         </div>
@@ -622,13 +686,13 @@ app.get('/pedido/:token', async (c) => {
   return c.html(
     <Vitrine env={c.env} loja={loja} base={base} meta={{ titulo: `Pedido nº ${pedido.numero}`, indexar: false, atualizar: esperando && recente ? 8 : undefined }} carrinho={lerCarrinho(c).length}>
       <Bloco>
-        <div class="pedido">
+        <div class="pedido" data-situacao={esperando && recente ? ir(base, `/pedido/${pedido.token}/situacao`) : undefined}>
           {pedido.status === 'pago' && (
             <>
-              <p class="pedido__selo pedido__selo--ok">Pagamento confirmado</p>
-              <h1>Seus arquivos estão prontos, {pedido.cliente_nome.split(' ')[0]}!</h1>
-              <p>
-                Guarde esta página nos favoritos — ela é o seu acesso aos arquivos. {pedido.email_enviado_em ? `Também mandamos o link para ${pedido.cliente_email}.` : ''}
+              <p class="selo-status selo-status--ok">Pagamento confirmado</p>
+              <h1>Seus arquivos estão prontos, {pedido.cliente_nome.split(' ')[0]}</h1>
+              <p class="pedido__texto">
+                Guarde esta página nos favoritos: ela é o seu acesso aos arquivos. {pedido.email_enviado_em ? `Também mandamos o link para ${pedido.cliente_email}.` : ''}
               </p>
               <ul class="downloads">
                 {itens.map((i) => {
@@ -643,9 +707,10 @@ app.get('/pedido/:token', async (c) => {
                         </small>
                       </div>
                       {esgotou ? (
-                        <span class="nota">Limite atingido — fale com a loja</span>
+                        <span class="nota">Limite atingido. Fale com a loja.</span>
                       ) : (
-                        <a class="btn" href={ir(base, `/pedido/${pedido!.token}/baixar/${i.id}`)} rel="nofollow">
+                        <a class="btn btn--pequeno" href={ir(base, `/pedido/${pedido!.token}/baixar/${i.id}`)} rel="nofollow" aria-label={`Baixar ${i.nome}`}>
+                          <Icone d={ICONES.baixar} />
                           Baixar
                         </a>
                       )}
@@ -657,33 +722,40 @@ app.get('/pedido/:token', async (c) => {
           )}
           {esperando && (
             <>
-              <p class="pedido__selo">Aguardando pagamento</p>
-              <h1>Quase lá!</h1>
-              <p>
+              <p class="selo-status selo-status--alerta">Aguardando pagamento</p>
+              <h1>Quase lá</h1>
+              <p class="pedido__texto">
                 {pedido.metodo === 'boleto'
                   ? 'Boleto leva até 3 dias úteis para compensar. Assim que cair, os arquivos aparecem aqui e chegam no seu e-mail.'
                   : 'Assim que o Mercado Pago confirmar, os arquivos aparecem aqui sozinhos e chegam no seu e-mail. Pix costuma levar segundos.'}
               </p>
-              {pedido.mp_preferencia_id && (
-                <p>
-                  <a class="btn btn--comprar" href={`https://www.mercadopago.com.br/checkout/v1/redirect?pref_id=${encodeURIComponent(pedido.mp_preferencia_id)}`}>
-                    {pedido.mp_status === 'rejected' ? 'Tentar pagar de novo' : 'Ir para o pagamento'}
-                  </a>
-                </p>
+              {pedido.mp_status === 'rejected' && (
+                <AvisoLoja tipo="erro" papel="alert">
+                  O pagamento foi recusado. Tente outro cartão ou pague com Pix.
+                </AvisoLoja>
               )}
-              {pedido.mp_status === 'rejected' && <p class="erro">O pagamento foi recusado. Tente outro cartão ou pague com Pix.</p>}
-              {!recente && (
-                <p>
-                  <a href="">Atualizar a página</a>
+              {pedido.mp_preferencia_id && (
+                <a class="btn btn--comprar" href={`https://www.mercadopago.com.br/checkout/v1/redirect?pref_id=${encodeURIComponent(pedido.mp_preferencia_id)}`}>
+                  {pedido.mp_status === 'rejected' ? 'Tentar pagar de novo' : 'Ir para o pagamento'}
+                </a>
+              )}
+              {recente ? (
+                <p class="verificando" data-verificando aria-live="polite">
+                  <span class="girando" aria-hidden="true"></span>
+                  Verificando o pagamento…
                 </p>
+              ) : (
+                <a class="btn btn--secundario btn--largo" href="">
+                  Atualizar a página
+                </a>
               )}
             </>
           )}
           {(pedido.status === 'reembolsado' || pedido.status === 'cancelado') && (
             <>
-              <p class="pedido__selo pedido__selo--erro">{pedido.status === 'reembolsado' ? 'Pedido reembolsado' : 'Pedido cancelado'}</p>
-              <h1>Este pedido não está mais ativo.</h1>
-              <p>Os arquivos deixaram de estar disponíveis. Dúvidas? Fale com a loja.</p>
+              <p class="selo-status selo-status--erro">{pedido.status === 'reembolsado' ? 'Pedido reembolsado' : 'Pedido cancelado'}</p>
+              <h1>Este pedido não está mais ativo</h1>
+              <p class="pedido__texto">Os arquivos deixaram de estar disponíveis. Dúvidas? Fale com a loja.</p>
             </>
           )}
           <dl class="pedido__dados">
@@ -703,6 +775,25 @@ app.get('/pedido/:token', async (c) => {
   )
 })
 
+// A página do pedido pergunta aqui, de tempos em tempos, se o pagamento caiu.
+// Mesma regra da página: consulta o Mercado Pago no máximo a cada 15 s.
+app.get('/pedido/:token/situacao', async (c) => {
+  let pedido = await pedidoPorToken(c.env, c.get('loja').id, c.req.param('token'))
+  if (!pedido) return c.json({ status: null }, 404)
+  if (pedido.status === 'pendente' && pedido.total_centavos > 0) {
+    const ultima = pedido.verificado_em ? Date.parse(pedido.verificado_em) : 0
+    if (Date.now() - ultima > 15_000) {
+      try {
+        pedido = await sincronizarPedido(c.env, pedido)
+      } catch (e) {
+        console.error('[pedido] situacao', e)
+      }
+    }
+  }
+  c.header('Cache-Control', 'no-store')
+  return c.json({ status: pedido.status })
+})
+
 app.get('/pedido/:token/baixar/:item', async (c) => {
   const loja = c.get('loja')
   const pedido = await pedidoPorToken(c.env, loja.id, c.req.param('token'))
@@ -715,9 +806,7 @@ app.get('/pedido/:token/baixar/:item', async (c) => {
     .bind(c.req.param('item'), pedido.id)
     .first<{ id: string; downloads: number; limite_downloads: number | null; arquivo_key: string | null; arquivo_nome: string | null; atual_key: string | null; atual_nome: string | null }>()
   if (!item) return naoEncontrado(c)
-  if (item.limite_downloads != null && item.downloads >= item.limite_downloads) {
-    return c.text('O limite de downloads deste arquivo foi atingido. Fale com a loja.', 403)
-  }
+  if (item.limite_downloads != null && item.downloads >= item.limite_downloads) return limiteAtingido(c)
   // Vale o arquivo de agora (a lojista pode ter corrigido); se sumiu, o da compra.
   let key = item.atual_key ?? item.arquivo_key
   let nome = item.atual_key ? item.atual_nome : item.arquivo_nome
@@ -727,10 +816,19 @@ app.get('/pedido/:token/baixar/:item', async (c) => {
     nome = item.arquivo_nome
     obj = await c.env.ARQUIVOS.get(key)
   }
-  if (!obj) return c.text('Arquivo indisponível no momento. Fale com a loja.', 404)
+  if (!obj) return telaMensagem(c, 'Arquivo indisponível', 'O arquivo não está disponível agora. Fale com a loja informando o número do pedido.', 404)
 
-  // Só conta o download que de fato começou.
-  await c.env.DB.prepare('UPDATE pedido_itens SET downloads = downloads + 1 WHERE id = ?').bind(item.id).run()
+  // Só conta o download que de fato começou, e conta e confere o limite numa
+  // operação só: dois cliques ao mesmo tempo não passam do limite.
+  const conta = await c.env.DB.prepare(
+    'UPDATE pedido_itens SET downloads = downloads + 1 WHERE id = ? AND (limite_downloads IS NULL OR downloads < limite_downloads)',
+  )
+    .bind(item.id)
+    .run()
+  if (!conta.meta.changes) {
+    await obj.body.cancel()
+    return limiteAtingido(c)
+  }
   const arquivo = (nome ?? 'arquivo').replace(/["\\\r\n]/g, '')
   return new Response(obj.body, {
     headers: {
@@ -746,26 +844,30 @@ app.get('/pedido/:token/baixar/:item', async (c) => {
 
 // ── meus pedidos (sem senha: o link vai para o e-mail) ─────────────────────
 
-function TelaMeusPedidos({ c, msg }: { c: C; msg?: { tipo: 'ok' | 'erro'; texto: string } }) {
+function TelaMeusPedidos({ msg }: { c?: C; msg?: { tipo: 'ok' | 'erro'; texto: string } }) {
   return (
     <Bloco>
       <div class="estreito">
-        <h1>Meus pedidos</h1>
-        <p>Comprou aqui e perdeu o e-mail com os arquivos? Escreva o e-mail usado na compra e mandamos os links de novo.</p>
-        {msg && <p class={msg.tipo === 'ok' ? 'sucesso' : 'erro'}>{msg.texto}</p>}
-        <form method="post" class="formulario">
+        <h1 class="titulo-pagina">Meus pedidos</h1>
+        <p class="lead">Comprou aqui e perdeu o e-mail com os arquivos? Escreva o e-mail usado na compra e mandamos os links de novo.</p>
+        {msg && (
+          <AvisoLoja tipo={msg.tipo} papel={msg.tipo === 'erro' ? 'alert' : 'status'}>
+            {msg.texto}
+          </AvisoLoja>
+        )}
+        <form method="post" class="formulario" data-enviando="Enviando…">
           <label>
-            E-mail da compra
-            <input name="email" type="email" required maxlength={200} autocomplete="email" />
+            <span>E-mail da compra</span>
+            <input name="email" type="email" required maxlength={200} autocomplete="email" autocapitalize="none" spellcheck={false} />
           </label>
-          <button class="btn">Enviar meus links</button>
+          <button class="btn btn--largo">Enviar meus links</button>
         </form>
       </div>
     </Bloco>
   )
 }
 
-app.get('/meus-pedidos', (c) => pagina(c, { titulo: 'Meus pedidos', indexar: false }, <TelaMeusPedidos c={c} />))
+app.get('/meus-pedidos', (c) => pagina(c, { titulo: 'Meus pedidos', indexar: false, secao: '/meus-pedidos' }, <TelaMeusPedidos c={c} />))
 
 app.post('/meus-pedidos', async (c) => {
   const loja = c.get('loja')
@@ -823,7 +925,7 @@ app.get('/sobre', (c) => {
   if (!l.sobre.trim()) return naoEncontrado(c)
   return pagina(
     c,
-    { titulo: `Sobre a ${l.nome}`, descricao: resumir(l.sobre), canonica: absoluta(c, '/sobre') },
+    { titulo: `Sobre a ${l.nome}`, descricao: resumir(l.sobre), canonica: absoluta(c, '/sobre'), secao: '/sobre' },
     <Bloco>
       <article class="texto">
         <h1>Sobre a {l.nome}</h1>
@@ -846,7 +948,7 @@ app.get('/:pagina{politica-de-privacidade|politica-de-reembolso|termos-de-uso|co
   const l = c.get('loja')
   return pagina(
     c,
-    { titulo: p.titulo, canonica: absoluta(c, `/${c.req.param('pagina')}`) },
+    { titulo: p.titulo, canonica: absoluta(c, `/${c.req.param('pagina')}`), secao: `/${c.req.param('pagina')}` },
     <Bloco>
       <article class="texto">
         <h1>{p.titulo}</h1>
@@ -886,23 +988,36 @@ app.get('/sitemap.xml', async (c) => {
   return c.body(xml, 200, { 'Content-Type': 'application/xml; charset=utf-8' })
 })
 
-function naoEncontrado(c: C) {
+/** Recado de página inteira, com saída para os produtos. */
+function telaMensagem(c: C, titulo: string, texto: string, status: number) {
   const base = c.get('base')
   return pagina(
     c,
-    { titulo: 'Página não encontrada', indexar: false },
+    { titulo, indexar: false },
     <Bloco>
       <div class="vazio">
-        <h1>Não encontramos esta página.</h1>
-        <p>
+        <h1>{titulo}</h1>
+        <p>{texto}</p>
+        <div class="vazio__botoes">
           <a class="btn" href={ir(base, '/produtos')}>
             Ver os produtos
           </a>
-        </p>
+          <a class="btn btn--secundario" href={ir(base, '/contato')}>
+            Falar com a loja
+          </a>
+        </div>
       </div>
     </Bloco>,
-    404,
+    status,
   )
+}
+
+function naoEncontrado(c: C) {
+  return telaMensagem(c, 'Página não encontrada', 'O endereço pode ter mudado ou o produto saiu da loja.', 404)
+}
+
+function limiteAtingido(c: C) {
+  return telaMensagem(c, 'Limite de downloads atingido', 'Este arquivo já foi baixado o número de vezes permitido. Fale com a loja informando o número do pedido.', 403)
 }
 
 app.notFound((c) => naoEncontrado(c as C))

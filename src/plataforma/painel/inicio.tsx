@@ -1,6 +1,6 @@
 import type { AppPainel } from './comum'
 import { tela } from './comum'
-import { Botao, Cartao, Etiqueta, Icone } from '../ui'
+import { Botao, Cartao, Etiqueta, Icone, Vazio } from '../ui'
 import { urlDaLoja } from '../../lib/dominio'
 import { contaConectada } from '../../lib/conta-mp'
 import { contarProdutosAtivos, situacaoDaAssinatura } from '../../lib/lojas'
@@ -17,10 +17,11 @@ export function EtiquetaStatus({ status }: { status: Pedido['status'] }) {
   return m[status] ?? <Etiqueta>{status}</Etiqueta>
 }
 
+/** Tabela de pedidos. No celular cada linha vira um bloco com total e situação à vista. */
 export function TabelaPedidos({ pedidos }: { pedidos: Pedido[] }) {
   return (
     <div class="tabela-rolagem">
-      <table class="tabela">
+      <table class="tabela tabela--pedidos">
         <thead>
           <tr>
             <th>Nº</th>
@@ -33,20 +34,26 @@ export function TabelaPedidos({ pedidos }: { pedidos: Pedido[] }) {
         <tbody>
           {pedidos.map((p) => (
             <tr>
-              <td>
-                <a href={`/painel/pedidos/${p.id}`}>#{p.numero}</a>
+              <td class="col-numero">
+                <a href={`/painel/pedidos/${p.id}`} tabindex={-1} aria-hidden="true">
+                  #{p.numero}
+                </a>
               </td>
-              <td>
+              <td class="col-cliente">
                 <a href={`/painel/pedidos/${p.id}`} class="tabela__principal">
                   {p.cliente_nome}
+                  <span class="sr-only">, pedido nº {p.numero}</span>
                 </a>
                 <small>{p.cliente_email}</small>
               </td>
-              <td>{dataHoraBR(p.criado_em)}</td>
-              <td>
+              <td class="col-data">
+                <span class="so-celular">#{p.numero} · </span>
+                {dataHoraBR(p.criado_em)}
+              </td>
+              <td class="col-situacao">
                 <EtiquetaStatus status={p.status} />
               </td>
-              <td class="num">{reais(p.total_centavos)}</td>
+              <td class="col-total num">{reais(p.total_centavos)}</td>
             </tr>
           ))}
         </tbody>
@@ -95,18 +102,19 @@ export function rotasInicio(app: AppPainel) {
       },
       { feito: assinatura.tipo === 'assinante', texto: 'Escolha seu plano', href: '/painel/plano', detalhe: 'Para a loja continuar no ar depois do teste.' },
     ]
-    const faltam = passos.filter((p) => !p.feito).length
+    const feitos = passos.filter((p) => p.feito).length
 
     return tela(
       c,
       { ativo: 'inicio', titulo: `Olá, ${c.get('usuario').nome.split(' ')[0]}` },
       <>
-        <Cartao class="cartao--link">
+        <Cartao>
           <div class="link-loja">
             <div>
               <p class="rotulo-pequeno">Endereço da sua loja</p>
               <a href={url} target="_blank" rel="noopener" class="link-loja__url">
                 {url.replace(/^https?:\/\//, '')}
+                <span class="sr-only"> (abre em outra aba)</span>
               </a>
               <p class="campo__ajuda">É este o link para pôr na bio do Instagram e mandar no WhatsApp.</p>
             </div>
@@ -114,21 +122,34 @@ export function rotasInicio(app: AppPainel) {
               <button type="button" class="botao botao--secundario" data-copiar={url}>
                 <Icone nome="copiar" /> Copiar link
               </button>
-              <Botao href={url} alvo="_blank" tipo="principal">
+              <Botao href={url} alvo="_blank" tipo="principal" icone="externo">
                 Abrir loja
               </Botao>
             </div>
           </div>
         </Cartao>
 
-        {faltam > 0 && (
-          <Cartao titulo={`Primeiros passos · ${passos.length - faltam} de ${passos.length}`}>
+        {feitos < passos.length && (
+          <Cartao titulo="Primeiros passos" acao={<span class="campo__ajuda">{`${feitos} de ${passos.length}`}</span>}>
+            <div class="progresso" role="progressbar" aria-label="Primeiros passos" aria-valuemin={0} aria-valuemax={passos.length} aria-valuenow={feitos}>
+              <span style={`width:${Math.round((feitos / passos.length) * 100)}%`}></span>
+            </div>
             <ol class="passos-lista">
               {passos.map((p) => (
                 <li class={p.feito ? 'feito' : undefined}>
                   <span class="passos-lista__marca">{p.feito ? <Icone nome="check" /> : null}</span>
                   <div>
-                    {p.feito ? <strong>{p.texto}</strong> : <a href={p.href}>{p.texto}</a>}
+                    {p.feito ? (
+                      <strong>
+                        {p.texto}
+                        <span class="sr-only"> (feito)</span>
+                      </strong>
+                    ) : (
+                      <a href={p.href}>
+                        {p.texto}
+                        <Icone nome="seguir" />
+                      </a>
+                    )}
                     <small>{p.detalhe}</small>
                   </div>
                 </li>
@@ -159,11 +180,13 @@ export function rotasInicio(app: AppPainel) {
           </div>
         </div>
 
-        <Cartao titulo="Últimas vendas" acao={<a href="/painel/pedidos">Ver todas</a>}>
+        <Cartao titulo="Últimas vendas" acao={ultimos.results.length ? <a href="/painel/pedidos">Ver todas</a> : undefined}>
           {ultimos.results.length ? (
             <TabelaPedidos pedidos={ultimos.results} />
           ) : (
-            <p class="texto-suave">Nenhum pedido ainda. Quando alguém comprar, aparece aqui — e você recebe um e-mail.</p>
+            <Vazio titulo="Nenhuma venda ainda" icone="pedidos">
+              <p>Quando alguém comprar, o pedido aparece aqui e você recebe um e-mail.</p>
+            </Vazio>
           )}
         </Cartao>
       </>,

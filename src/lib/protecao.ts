@@ -41,6 +41,7 @@ export async function passouNoTurnstile(c: C, token: unknown): Promise<boolean> 
     const r = await fetch('https://challenges.cloudflare.com/turnstile/v0/siteverify', {
       method: 'POST',
       body: new URLSearchParams({ secret: env.TURNSTILE_SECRET!, response: token, remoteip: ipDe(c) }),
+      signal: AbortSignal.timeout(5_000),
     })
     const j = (await r.json()) as { success?: boolean; hostname?: string }
     return j.success === true
@@ -67,7 +68,11 @@ export async function problemaNaSenha(senha: string, email?: string): Promise<st
       .map((b) => b.toString(16).padStart(2, '0'))
       .join('')
       .toUpperCase()
-    const r = await fetch(`https://api.pwnedpasswords.com/range/${sha1.slice(0, 5)}`, { headers: { 'Add-Padding': 'true' } })
+    // Consulta de cortesia: se demorar, o cadastro segue sem ela.
+    const r = await fetch(`https://api.pwnedpasswords.com/range/${sha1.slice(0, 5)}`, {
+      headers: { 'Add-Padding': 'true' },
+      signal: AbortSignal.timeout(4_000),
+    })
     if (r.ok) {
       const resto = sha1.slice(5)
       for (const linha of (await r.text()).split('\n')) {

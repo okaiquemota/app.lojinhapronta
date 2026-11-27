@@ -19,6 +19,15 @@ import { assinaturaDoAvisoValida } from './lib/stripe'
 
 const app = new Hono<{ Bindings: Env }>()
 
+const LIMITE_AVISOS_POR_MINUTO = 60
+
+async function avisosRecentes(env: Env, origem: string): Promise<number> {
+  const r = await env.DB.prepare('SELECT COUNT(*) AS n FROM avisos_mp WHERE origem = ? AND criado_em > ?')
+    .bind(origem, new Date(Date.now() - 60_000).toISOString())
+    .first<{ n: number }>()
+  return r?.n ?? 0
+}
+
 async function registrar(env: Env, origem: string, tipo: string | null, id: string | null, corpo: string, resultado: string) {
   try {
     await env.DB.prepare('INSERT INTO avisos_mp (origem, tipo, recurso_id, corpo, resultado, criado_em) VALUES (?, ?, ?, ?, ?, ?)')
@@ -44,6 +53,13 @@ app.post('/mercadopago', async (c) => {
   const trabalho = (async () => {
     let resultado = 'ignorado'
     try {
+      // O endereço é público: sem freio, qualquer um faria o Worker consultar o
+      // Mercado Pago com o token da loja e encher a tabela de avisos. Loja de
+      // verdade não recebe 60 avisos por minuto.
+      if (lojaId && (await avisosRecentes(env, `loja:${lojaId}`)) >= LIMITE_AVISOS_POR_MINUTO) {
+        console.warn(`[webhook] loja ${lojaId}: avisos demais, ignorando`)
+        return
+      }
       if (lojaId && id && tipo === 'payment' && /^\d{1,20}$/.test(id)) {
         const conta = await contaDaLoja(env, lojaId)
         if (!conta) resultado = 'loja sem conta'

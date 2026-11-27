@@ -58,7 +58,8 @@ async function chamar<T>(env: Env, metodo: 'GET' | 'POST', caminho: string, dado
     headers['Content-Type'] = 'application/x-www-form-urlencoded'
   }
   if (idempotencia) headers['Idempotency-Key'] = idempotencia
-  const r = await fetch(url, { method: metodo, headers, body })
+  // Sem resposta em 15 s, desiste; a chave de idempotência torna seguro tentar de novo.
+  const r = await fetch(url, { method: metodo, headers, body, signal: AbortSignal.timeout(15_000) })
   const json: any = await r.json().catch(() => ({}))
   if (!r.ok) throw new ErroStripe(r.status, json)
   return json as T

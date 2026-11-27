@@ -5,9 +5,13 @@
   "compatibility_date": "2026-11-01",
   "compatibility_flags": ["nodejs_compat"],
 
-  // CSS, JS e ícones de public/_lp/ entram no Worker como texto (src/estaticos.ts)
-  // e saem em /_lp/, um caminho que não colide com nenhuma página de loja.
-  "rules": [{ "type": "Text", "globs": ["**/*.css", "**/*.js.txt", "**/*.svg"], "fallthrough": true }],
+  // CSS, JS e ícones de public/_lp/ entram no Worker como texto, e as imagens da
+  // apresentação (PNG) como bytes (src/estaticos.ts). Saem em /_lp/, um caminho
+  // que não colide com nenhuma página de loja.
+  "rules": [
+    { "type": "Text", "globs": ["**/*.css", "**/*.js.txt", "**/*.svg"], "fallthrough": true },
+    { "type": "Data", "globs": ["**/*.png"], "fallthrough": true }
+  ],
 
   "d1_databases": [
     {

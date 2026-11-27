@@ -23,8 +23,12 @@ import { reconciliarPendentes } from './lib/pedidos'
 import { reconciliarAssinaturas } from './lib/assinaturas'
 import { usarApiDeTeste } from './lib/mercadopago'
 import { usarStripeDeTeste } from './lib/stripe'
+import { cabecalhosPlataforma } from './lib/cabecalhos'
+import { PaginaErro } from './plataforma/layout'
 
 const plataforma = new Hono<{ Bindings: Env }>()
+
+plataforma.use('*', cabecalhosPlataforma)
 
 // Formulário enviado de outro site não age em nome de quem está logado.
 plataforma.use('*', async (c, next) => {
@@ -33,40 +37,18 @@ plataforma.use('*', async (c, next) => {
     if (origem && origem !== new URL(c.req.url).origin) return c.text('Origem não permitida', 403)
   }
   await next()
-  c.header('X-Frame-Options', 'DENY')
-  c.header('Referrer-Policy', 'strict-origin-when-cross-origin')
-  c.header('X-Content-Type-Options', 'nosniff')
-  c.header('Permissions-Policy', 'camera=(), microphone=(), geolocation=(), payment=()')
-  c.header('Cross-Origin-Opener-Policy', 'same-origin')
-  if (new URL(c.req.url).protocol === 'https:') c.header('Strict-Transport-Security', 'max-age=31536000; includeSubDomains')
-  // Só carrega script daqui e do anti-robô do Cloudflare; formulário só manda
-  // para cá ou para o checkout do Stripe.
-  c.header(
-    'Content-Security-Policy',
-    [
-      "default-src 'self'",
-      "script-src 'self' https://challenges.cloudflare.com",
-      "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
-      "font-src 'self' https://fonts.gstatic.com",
-      "img-src 'self' data: blob:",
-      "connect-src 'self'",
-      'frame-src https://challenges.cloudflare.com',
-      "form-action 'self' https://checkout.stripe.com https://billing.stripe.com https://auth.mercadopago.com.br",
-      "frame-ancestors 'none'",
-      "base-uri 'self'",
-      "object-src 'none'",
-    ].join('; '),
-  )
 })
 
 plataforma.route('/', publico)
 plataforma.route('/painel', painel)
 plataforma.route('/admin', admin)
 plataforma.route('/webhooks', webhooks)
-plataforma.notFound((c) => c.text('Página não encontrada', 404))
+plataforma.notFound((c) =>
+  c.html(<PaginaErro titulo="Página não encontrada" texto="O endereço pode ter mudado ou o item foi excluído." />, 404),
+)
 plataforma.onError((e, c) => {
   console.error('[plataforma]', e)
-  return c.text('Algo deu errado do nosso lado. Tente de novo em instantes.', 500)
+  return c.html(<PaginaErro titulo="Algo deu errado" texto="O erro foi do nosso lado. Tente de novo em instantes." />, 500)
 })
 
 vitrine.onError((e, c) => {
@@ -92,7 +74,7 @@ export default {
     usarStripeDeTeste(env.STRIPE_API_TESTE)
     const url = new URL(req.url)
 
-    if (url.pathname.startsWith('/_lp/')) return servirEstatico(url.pathname.slice(5))
+    if (url.pathname.startsWith('/_lp/')) return servirEstatico(url.pathname.slice(5), url.searchParams.get('v'))
     if (url.pathname.startsWith('/i/')) return servirImagem(env, url.pathname.slice(3), req)
 
     // Domínio principal: www vai para a raiz; a raiz mostra a apresentação, e o

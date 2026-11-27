@@ -1,9 +1,9 @@
 import type { AppPainel, Ctx } from './comum'
 import { tela } from './comum'
-import { AreaTexto, Botao, Campo, Cartao, Etiqueta, Marcador, Selecao, Vazio, avisar } from '../ui'
+import { AreaTexto, BarraAcoes, Botao, Busca, Campo, CampoArquivo, Cartao, Etiqueta, Icone, Marcador, Nota, Selecao, Vazio, avisar } from '../ui'
 import type { Aviso } from '../ui'
 import type { Categoria, Produto } from '../../tipos'
-import { agora, campo, centavosDeTexto, centavosParaCampo, lista, reais, slugificar, tamanhoArquivo } from '../../lib/formato'
+import { agora, campo, centavosDeTexto, centavosParaCampo, lista, plural, reais, slugificar, tamanhoArquivo } from '../../lib/formato'
 import { gerarId } from '../../lib/seguranca'
 import { apagar, arquivoDaLoja, arquivoEnviado, enviarArquivoDireto, guardarArquivo, guardarImagem } from '../../lib/arquivos'
 import { contarProdutosAtivos, limiteDeProdutos, urlImagem } from '../../lib/lojas'
@@ -35,60 +35,93 @@ function Lista({ c, produtos, categorias, q }: { c: Ctx; produtos: Produto[]; ca
   if (!produtos.length && !q) {
     return (
       <Cartao>
-        <Vazio titulo="Nenhum produto ainda">
+        <Vazio titulo="Nenhum produto ainda" icone="produtos">
           <p>Cadastre o primeiro: nome, preço, uma foto e o arquivo que a cliente recebe depois de pagar.</p>
-          <Botao href="/painel/produtos/novo">Cadastrar produto</Botao>
+          <Botao href="/painel/produtos/novo" icone="mais">
+            Cadastrar produto
+          </Botao>
         </Vazio>
       </Cartao>
     )
   }
   return (
     <Cartao>
-      <form class="busca-painel" method="get">
-        <input type="search" name="q" value={q} placeholder="Buscar produto" aria-label="Buscar produto" />
-      </form>
-      <ul class="lista-produtos">
-        {produtos.map((p) => {
-          const capa = lista(p.imagens)[0]
-          return (
-            <li>
-              <a href={`/painel/produtos/${p.id}`} class="lista-produtos__item">
-                <span class="miniatura">{capa ? <img src={urlImagem(capa)} alt="" loading="lazy" /> : <span>sem foto</span>}</span>
-                <span class="lista-produtos__info">
-                  <strong>{p.nome}</strong>
-                  <small>
-                    {p.categoria_id ? nomeCat.get(p.categoria_id) : 'Sem categoria'}
-                    {p.arquivo_nome ? ` · ${p.arquivo_nome}` : ''}
-                  </small>
-                </span>
-                <span class="lista-produtos__preco">{p.preco_centavos === 0 ? 'Grátis' : reais(p.preco_centavos)}</span>
-                <span class="lista-produtos__estado">
-                  {p.arquivado ? (
-                    <Etiqueta>Arquivado</Etiqueta>
-                  ) : p.ativo ? (
-                    <Etiqueta cor="verde">À venda</Etiqueta>
-                  ) : !p.arquivo_key ? (
-                    <Etiqueta cor="amarelo">Falta o arquivo</Etiqueta>
-                  ) : (
-                    <Etiqueta>Escondido</Etiqueta>
-                  )}
-                </span>
-              </a>
-              {p.ativo && !p.arquivado ? (
-                <a class="lista-produtos__ver" href={`${base}/produto/${p.slug}`} target="_blank" rel="noopener">
-                  ver na loja
+      <Busca valor={q} placeholder="Buscar produto" rotulo="Buscar produto" />
+      {produtos.length ? (
+        <ul class="lista-produtos">
+          {produtos.map((p) => {
+            const capa = lista(p.imagens)[0]
+            return (
+              <li>
+                <a href={`/painel/produtos/${p.id}`} class="lista-produtos__item">
+                  <span class="miniatura">{capa ? <img src={urlImagem(capa)} alt="" loading="lazy" /> : <Icone nome="imagem" />}</span>
+                  <span class="lista-produtos__info">
+                    <strong>{p.nome}</strong>
+                    <small>
+                      {p.categoria_id ? nomeCat.get(p.categoria_id) : 'Sem categoria'}
+                      {p.arquivo_nome ? ` · ${p.arquivo_nome}` : ''}
+                    </small>
+                  </span>
+                  <span class="lista-produtos__meta">
+                    <span class="lista-produtos__preco">{p.preco_centavos === 0 ? 'Grátis' : reais(p.preco_centavos)}</span>
+                    <span class="lista-produtos__estado">
+                      {p.arquivado ? (
+                        <Etiqueta>Arquivado</Etiqueta>
+                      ) : p.ativo ? (
+                        <Etiqueta cor="verde">À venda</Etiqueta>
+                      ) : !p.arquivo_key ? (
+                        <Etiqueta cor="amarelo">Falta o arquivo</Etiqueta>
+                      ) : (
+                        <Etiqueta>Escondido</Etiqueta>
+                      )}
+                    </span>
+                  </span>
                 </a>
-              ) : null}
-            </li>
-          )
-        })}
-      </ul>
-      {!produtos.length && <p class="texto-suave">Nada encontrado para “{q}”.</p>}
+                {p.ativo && !p.arquivado ? (
+                  <a class="botao-icone" href={`${base}/produto/${p.slug}`} target="_blank" rel="noopener" aria-label={`Ver ${p.nome} na loja (abre em outra aba)`} title="Ver na loja">
+                    <Icone nome="externo" />
+                  </a>
+                ) : (
+                  <span class="botao-icone" aria-hidden="true"></span>
+                )}
+              </li>
+            )
+          })}
+        </ul>
+      ) : (
+        <Vazio titulo={`Nada encontrado para “${q}”`} icone="busca">
+          <Botao href="/painel/produtos" tipo="secundario">
+            Ver todos os produtos
+          </Botao>
+        </Vazio>
+      )}
     </Cartao>
   )
 }
 
 // ── formulário ─────────────────────────────────────────────────────────────
+
+function verNaLoja(c: Ctx, p: Produto) {
+  if (!p.ativo || p.arquivado) return undefined
+  return (
+    <Botao href={`${urlDaLoja(c.env, c.get('loja'))}/produto/${p.slug}`} alvo="_blank" tipo="secundario" icone="externo">
+      Ver na loja
+    </Botao>
+  )
+}
+
+/** Excluir fica longe do salvar, no fim da página, e pede confirmação. */
+function ZonaDePerigo({ produto }: { produto: Produto }) {
+  return (
+    <Cartao class="cartao--perigo" titulo="Excluir produto" descricao="Se ele já foi vendido, é arquivado: sai da loja e quem comprou continua baixando.">
+      <form method="post" action={`/painel/produtos/${produto.id}/excluir`}>
+        <Botao tipo="perigo" icone="lixeira" confirmar={`Excluir “${produto.nome}”?`} confirmarCom="Excluir produto">
+          Excluir produto
+        </Botao>
+      </form>
+    </Cartao>
+  )
+}
 
 type Valores = {
   nome: string
@@ -150,45 +183,53 @@ function Formulario({ produto, v, categorias, erros }: { produto?: Produto | nul
             />
           </Cartao>
 
-          <Cartao titulo="Fotos">
+          <Cartao titulo="Fotos" descricao="A primeira vira a capa. Quadrada fica melhor na vitrine.">
             {imagens.length > 0 && (
               <ul class="galeria-edicao">
                 {imagens.map((k, i) => (
                   <li>
-                    <img src={urlImagem(k)} alt="" />
-                    {i === 0 && <span class="galeria-edicao__capa">capa</span>}
+                    <img src={urlImagem(k)} alt={`Foto ${i + 1}`} />
+                    {i === 0 && <span class="galeria-edicao__capa">Capa</span>}
                     <label class="galeria-edicao__remover">
-                      <input type="checkbox" name="remover_imagem" value={k} /> remover
+                      <input type="checkbox" name="remover_imagem" value={k} /> Remover
                     </label>
                   </li>
                 ))}
               </ul>
             )}
-            <div class="campo">
-              <label for="c-imagens">{imagens.length ? 'Adicionar fotos' : 'Fotos do produto'}</label>
-              <input id="c-imagens" type="file" name="imagens" accept="image/jpeg,image/png,image/webp" multiple data-reduzir-imagem />
-              <p class="campo__ajuda">A primeira vira a capa. Quadrada fica melhor na vitrine. JPG, PNG ou WEBP.</p>
-            </div>
+            <CampoArquivo
+              rotulo={imagens.length ? 'Adicionar fotos' : 'Fotos do produto'}
+              nome="imagens"
+              aceita="image/jpeg,image/png,image/webp"
+              multiplo
+              reduzir
+              ajuda="JPG, PNG ou WEBP. Fotos grandes do celular são reduzidas antes de subir."
+            />
           </Cartao>
         </div>
 
         <div class="grade-produto__lateral">
-          <Cartao titulo="Arquivo entregue">
+          <Cartao titulo="Arquivo entregue" descricao="É o que a cliente baixa depois de pagar.">
             {produto?.arquivo_key ? (
-              <p class="arquivo-atual">
-                <strong>{produto.arquivo_nome}</strong>
-                <small>{tamanhoArquivo(produto.arquivo_tamanho)}</small>
-              </p>
+              <div class="arquivo-atual">
+                <Icone nome="arquivo" />
+                <span>
+                  <strong>{produto.arquivo_nome}</strong>
+                  <small>{tamanhoArquivo(produto.arquivo_tamanho)}</small>
+                </span>
+              </div>
             ) : (
-              <p class="texto-suave">É o que a cliente baixa depois de pagar. Sem arquivo, o produto não vai para a vitrine.</p>
+              <Nota tipo="alerta">Sem arquivo, o produto não vai para a vitrine.</Nota>
             )}
-            <div class={`campo${erros.arquivo ? ' campo--erro' : ''}`}>
-              <label for="c-arquivo">{produto?.arquivo_key ? 'Trocar arquivo' : 'Enviar arquivo'}</label>
-              <input id="c-arquivo" type="file" name="arquivo" accept=".pdf,.zip,.rar,.png,.jpg,.jpeg,.docx,.xlsx,.pptx,.mp3,.mp4,.epub" data-direto />
-              <input type="hidden" name="arquivo_key" value="" />
-              {erros.arquivo && <p class="campo__erro">{erros.arquivo}</p>}
-              <p class="campo__ajuda">PDF, ZIP, imagem ou planilha, até 95 MB. Quem já comprou recebe a versão nova.</p>
-            </div>
+            <CampoArquivo
+              rotulo={produto?.arquivo_key ? 'Trocar arquivo' : 'Enviar arquivo'}
+              nome="arquivo"
+              aceita=".pdf,.zip,.rar,.png,.jpg,.jpeg,.docx,.xlsx,.pptx,.mp3,.mp4,.epub"
+              direto
+              erro={erros.arquivo}
+              ajuda="PDF, ZIP, imagem ou planilha, até 95 MB. Quem já comprou recebe a versão nova."
+            />
+            <input type="hidden" name="arquivo_key" value="" />
             <Campo
               rotulo="Limite de downloads por compra"
               nome="limite_downloads"
@@ -205,12 +246,14 @@ function Formulario({ produto, v, categorias, erros }: { produto?: Produto | nul
             <Marcador nome="destaque" marcado={v.destaque} rotulo="Destaque" ajuda="Aparece primeiro na página inicial." />
             {erros.ativo && <p class="campo__erro">{erros.ativo}</p>}
           </Cartao>
-
-          <div class="acoes-form">
-            <Botao>Salvar produto</Botao>
-          </div>
         </div>
       </div>
+      <BarraAcoes nota={produto ? 'As mudanças valem na loja assim que você salvar.' : 'O produto entra na loja quando tiver arquivo e estiver à venda.'}>
+        <Botao href="/painel/produtos" tipo="fantasma">
+          Cancelar
+        </Botao>
+        <Botao>{produto ? 'Salvar produto' : 'Cadastrar produto'}</Botao>
+      </BarraAcoes>
     </form>
   )
 }
@@ -366,7 +409,15 @@ export function rotasProdutos(app: AppPainel) {
     const categorias = await categoriasDa(c)
     return tela(
       c,
-      { ativo: 'produtos', titulo: 'Produtos', acoes: <Botao href="/painel/produtos/novo" pequeno>+ Novo produto</Botao> },
+      {
+        ativo: 'produtos',
+        titulo: 'Produtos',
+        acoes: (
+          <Botao href="/painel/produtos/novo" icone="mais">
+            Novo produto
+          </Botao>
+        ),
+      },
       <Lista c={c} produtos={r.results} categorias={categorias} q={q} />,
     )
   })
@@ -401,15 +452,12 @@ export function rotasProdutos(app: AppPainel) {
         ativo: 'produtos',
         titulo: p.nome,
         voltar: { href: '/painel/produtos', texto: 'Produtos' },
-        acoes: (
-          <form method="post" action={`/painel/produtos/${p.id}/excluir`}>
-            <Botao tipo="fantasma" pequeno confirmar="Excluir este produto? Se ele já foi vendido, ele é arquivado e quem comprou continua baixando.">
-              Excluir
-            </Botao>
-          </form>
-        ),
+        acoes: verNaLoja(c, p),
       },
-      <Formulario produto={p} v={valoresDe(p)} categorias={await categoriasDa(c)} erros={{}} />,
+      <>
+        <Formulario produto={p} v={valoresDe(p)} categorias={await categoriasDa(c)} erros={{}} />
+        <ZonaDePerigo produto={p} />
+      </>,
     )
   })
 
@@ -420,8 +468,11 @@ export function rotasProdutos(app: AppPainel) {
     if (!r.ok) {
       return tela(
         c,
-        { ativo: 'produtos', titulo: p.nome, voltar: { href: '/painel/produtos', texto: 'Produtos' }, aviso: erroGeral, status: 422 },
-        <Formulario produto={p} v={r.v} categorias={await categoriasDa(c)} erros={r.erros} />,
+        { ativo: 'produtos', titulo: p.nome, voltar: { href: '/painel/produtos', texto: 'Produtos' }, acoes: verNaLoja(c, p), aviso: erroGeral, status: 422 },
+        <>
+          <Formulario produto={p} v={r.v} categorias={await categoriasDa(c)} erros={r.erros} />
+          <ZonaDePerigo produto={p} />
+        </>,
       )
     }
     avisar(c, r.aviso, r.aviso.includes('escondido') ? 'erro' : 'ok')
@@ -455,37 +506,46 @@ export function rotasProdutos(app: AppPainel) {
     return tela(
       c,
       { ativo: 'categorias', titulo: 'Categorias' },
-      <>
-        <Cartao titulo="Nova categoria">
+      <div class="pilha pilha--texto">
+        <Cartao titulo="Nova categoria" descricao="Categorias organizam a vitrine e aparecem na página inicial da loja.">
           <form method="post" action="/painel/categorias" class="form form--linha">
             <Campo rotulo="Nome" nome="nome" obrigatorio max={60} placeholder="Ex.: Alfabetização" />
-            <Botao>Criar</Botao>
+            <Botao icone="mais">Criar</Botao>
           </form>
         </Cartao>
-        <Cartao titulo="Suas categorias">
+        <Cartao titulo="Suas categorias" descricao={cats.length ? 'A ordem define a sequência na loja: o menor número aparece primeiro.' : undefined}>
           {cats.length ? (
             <ul class="lista-categorias">
               {cats.map((k) => (
                 <li>
                   <form method="post" action={`/painel/categorias/${k.id}`} class="form form--linha">
-                    <input name="nome" value={k.nome} maxlength={60} aria-label="Nome da categoria" required />
-                    <input name="ordem" value={String(k.ordem)} type="number" class="campo-ordem" aria-label="Ordem" title="Ordem na loja" />
-                    <span class="texto-suave">{n.get(k.id) ?? 0} produtos</span>
+                    <input name="nome" value={k.nome} maxlength={60} aria-label={`Nome da categoria ${k.nome}`} required />
+                    <input name="ordem" value={String(k.ordem)} type="number" class="campo-ordem" aria-label={`Ordem de ${k.nome} na loja`} title="Ordem na loja" />
+                    <span class="lista-categorias__contagem">{plural(n.get(k.id) ?? 0, 'produto', 'produtos')}</span>
                     <Botao tipo="secundario" pequeno>
                       Salvar
                     </Botao>
-                    <Botao tipo="fantasma" pequeno nome="excluir" valor="1" confirmar="Excluir a categoria? Os produtos dela ficam sem categoria.">
-                      Excluir
-                    </Botao>
+                    <Botao
+                      tipo="perigo"
+                      pequeno
+                      nome="excluir"
+                      valor="1"
+                      icone="lixeira"
+                      rotulo={`Excluir ${k.nome}`}
+                      confirmar={`Excluir a categoria “${k.nome}”? Os produtos dela ficam sem categoria.`}
+                      confirmarCom="Excluir categoria"
+                    />
                   </form>
                 </li>
               ))}
             </ul>
           ) : (
-            <p class="texto-suave">Categorias organizam a vitrine — “Alfabetização”, “Datas comemorativas”, “Moldes”. Aparecem na página inicial da loja.</p>
+            <Vazio titulo="Nenhuma categoria ainda" icone="categorias">
+              <p>Exemplos: “Alfabetização”, “Datas comemorativas”, “Moldes”.</p>
+            </Vazio>
           )}
         </Cartao>
-      </>,
+      </div>,
     )
   })
 
