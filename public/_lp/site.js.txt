@@ -1,53 +1,57 @@
-// Comportamento da apresentação, o mesmo de lojinhapronta.com.br:
-// barra do topo que clareia ao rolar, menu do celular, seções que aparecem
-// ao rolar, perguntas em sanfona e o botão fixo do celular.
+// Apresentação: barra do topo que ganha linha ao rolar, menu do celular,
+// seções que entram ao rolar, link da seção atual e o botão fixo do celular.
+// Sem este arquivo a página funciona inteira (as perguntas usam <details>).
+document.documentElement.classList.add('js')
+
 ;(() => {
   const navbar = document.querySelector('.navbar')
-  const zap = document.querySelector('.zap-fixo')
-  const hero = document.querySelector('.hero')
+  const fixo = document.querySelector('[data-cta-fixo]')
+  const capa = document.querySelector('.capa')
   const rolou = () => {
     const y = window.scrollY
-    navbar?.classList.toggle('navbar--rolou', y > 24)
-    if (zap && hero) zap.classList.toggle('is-visivel', y > hero.offsetHeight * 0.7)
+    navbar?.classList.toggle('navbar--rolou', y > 8)
+    if (fixo && capa) fixo.classList.toggle('cta-fixo--visivel', y > capa.offsetHeight * 0.8)
   }
   addEventListener('scroll', rolou, { passive: true })
   rolou()
 
   // menu do celular
-  const botao = document.querySelector('.navbar__hamburguer')
-  const menu = document.getElementById('menu-mobile')
-  const fechar = () => {
-    navbar.classList.remove('navbar--aberto')
+  const botao = document.querySelector('.navbar__menu')
+  const menu = document.getElementById('menu-celular')
+  const fechar = (focar) => {
+    navbar.classList.remove('navbar--aberta')
     botao.setAttribute('aria-expanded', 'false')
     botao.setAttribute('aria-label', 'Abrir menu')
     menu.hidden = true
-    document.body.style.overflow = ''
+    if (focar) botao.focus()
   }
   botao?.addEventListener('click', () => {
-    if (!menu.hidden) return fechar()
-    navbar.classList.add('navbar--aberto')
+    if (!menu.hidden) return fechar(false)
+    navbar.classList.add('navbar--aberta')
     botao.setAttribute('aria-expanded', 'true')
     botao.setAttribute('aria-label', 'Fechar menu')
     menu.hidden = false
-    document.body.style.overflow = 'hidden'
+    menu.querySelector('a')?.focus()
   })
   menu?.addEventListener('click', (e) => {
-    if (e.target.closest('a')) fechar()
+    if (e.target.closest('a')) fechar(false)
+  })
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && menu && !menu.hidden) fechar(true)
   })
 
-  // seções aparecem ao entrar na tela
+  // seções entram ao aparecer na tela
   const revelar = document.querySelectorAll('.reveal')
   if ('IntersectionObserver' in window && !matchMedia('(prefers-reduced-motion: reduce)').matches) {
     const obs = new IntersectionObserver(
       (entradas) => {
         for (const e of entradas) {
-          if (e.isIntersecting) {
-            e.target.setAttribute('data-visivel', '')
-            obs.unobserve(e.target)
-          }
+          if (!e.isIntersecting) continue
+          e.target.setAttribute('data-visivel', '')
+          obs.unobserve(e.target)
         }
       },
-      { rootMargin: '0px 0px -8% 0px', threshold: 0.12 },
+      { rootMargin: '0px 0px -6% 0px', threshold: 0.08 },
     )
     revelar.forEach((el) => obs.observe(el))
   } else {
@@ -55,32 +59,21 @@
   }
 
   // link da seção atual aceso no topo
-  const links = [...document.querySelectorAll('.navbar__link')]
+  const links = [...document.querySelectorAll('.navbar__links a')]
   const secoes = links.map((a) => document.querySelector(a.getAttribute('href'))).filter(Boolean)
   if ('IntersectionObserver' in window) {
     const obs = new IntersectionObserver(
       (entradas) => {
         for (const e of entradas) {
           if (!e.isIntersecting) continue
-          links.forEach((a) => a.classList.toggle('is-ativo', a.getAttribute('href') === `#${e.target.id}`))
+          links.forEach((a) => {
+            if (a.getAttribute('href') === `#${e.target.id}`) a.setAttribute('aria-current', 'true')
+            else a.removeAttribute('aria-current')
+          })
         }
       },
       { rootMargin: '-45% 0px -50% 0px' },
     )
     secoes.forEach((s) => obs.observe(s))
   }
-
-  // perguntas em sanfona: abre uma, fecha a outra
-  document.querySelectorAll('.faq__pergunta').forEach((b) =>
-    b.addEventListener('click', () => {
-      const item = b.closest('.faq__item')
-      const abrir = !item.classList.contains('is-aberto')
-      document.querySelectorAll('.faq__item.is-aberto').forEach((i) => {
-        i.classList.remove('is-aberto')
-        i.querySelector('.faq__pergunta').setAttribute('aria-expanded', 'false')
-      })
-      item.classList.toggle('is-aberto', abrir)
-      b.setAttribute('aria-expanded', String(abrir))
-    }),
-  )
 })()

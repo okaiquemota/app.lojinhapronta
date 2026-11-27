@@ -1,6 +1,6 @@
-import type { AppPainel } from './comum'
+import type { AppPainel, Ctx } from './comum'
 import { tela } from './comum'
-import { Botao, Campo, Cartao, Etiqueta, avisar } from '../ui'
+import { Botao, Campo, Cartao, Etiqueta, Icone, Nota, avisar } from '../ui'
 import { CartoesPlanos } from '../publico'
 import { contaConectada, desconectarConta, salvarConta } from '../../lib/conta-mp'
 import { trocarCodigo, urlAutorizacao, ErroMP } from '../../lib/mercadopago'
@@ -19,6 +19,16 @@ import {
 import { stripeLigado } from '../../lib/stripe'
 import type { Loja } from '../../tipos'
 
+/** Pedido inválido da própria lojista (não é falha do Stripe). */
+class ErroDeEscolha extends Error {}
+
+function EtiquetaPlano({ s, status }: { s: ReturnType<typeof situacaoDaAssinatura>; status: string | null }) {
+  if (s.tipo === 'assinante') return s.atrasada ? <Etiqueta cor="amarelo">Pagamento atrasado</Etiqueta> : <Etiqueta cor="verde">Assinatura ativa</Etiqueta>
+  if (s.tipo === 'teste') return <Etiqueta cor="azul">Teste grátis</Etiqueta>
+  if (s.tipo === 'cancelada') return <Etiqueta cor="amarelo">Cancelada</Etiqueta>
+  return <Etiqueta cor="vermelho">{status === 'past_due' ? 'Fora do ar: pagamento atrasado' : 'Fora do ar'}</Etiqueta>
+}
+
 export function rotasRecebimento(app: AppPainel) {
   // ── Mercado Pago da lojista ──────────────────────────────────────────────
   app.get('/pagamentos', async (c) => {
@@ -28,40 +38,48 @@ export function rotasRecebimento(app: AppPainel) {
     return tela(
       c,
       { ativo: 'pagamentos', titulo: 'Recebimento' },
-      <>
-        <Cartao titulo="Mercado Pago">
+      <div class="pilha pilha--texto">
+        <Cartao titulo="Mercado Pago" acao={conta ? <Etiqueta cor="verde">Conectado</Etiqueta> : <Etiqueta cor="amarelo">Não conectado</Etiqueta>}>
           {conta ? (
-            <div class="conectado">
-              <p>
-                <Etiqueta cor="verde">Conectado</Etiqueta>
-              </p>
+            <>
               <p>
                 As vendas caem na conta <strong>{conta.conta}</strong>, conectada em {dataBR(conta.conectadoEm)}
                 {conta.viaOauth ? '' : ' pela chave de acesso'}.
               </p>
               <p class="texto-suave">Pix, cartão de crédito (em até 12×) e boleto. O arquivo é liberado no instante em que o Mercado Pago confirma o pagamento.</p>
               <form method="post" action="/painel/pagamentos/desconectar">
-                <Botao tipo="fantasma" pequeno confirmar="Desconectar? A loja para de aceitar pagamento até você conectar de novo.">
+                <Botao tipo="perigo" pequeno confirmar="Desconectar o Mercado Pago? A loja para de aceitar pagamento até você conectar de novo." confirmarCom="Desconectar">
                   Desconectar
                 </Botao>
               </form>
-            </div>
+            </>
           ) : (
-            <div class="conectar">
+            <>
               <p>
-                Conecte a <strong>sua</strong> conta do Mercado Pago. O dinheiro de cada venda vai direto para ela — a Lojinha Pronta nunca toca nele.
+                Conecte a <strong>sua</strong> conta do Mercado Pago. O dinheiro de cada venda vai direto para ela: a Lojinha Pronta nunca toca nele.
               </p>
               <ul class="lista-check">
-                <li>Pix, cartão em até 12× e boleto</li>
-                <li>Arquivo liberado sozinho quando o pagamento cai</li>
-                <li>Taxas do Mercado Pago, sem nada a mais da nossa parte</li>
+                <li>
+                  <Icone nome="check" />
+                  Pix, cartão em até 12× e boleto
+                </li>
+                <li>
+                  <Icone nome="check" />
+                  Arquivo liberado sozinho quando o pagamento cai
+                </li>
+                <li>
+                  <Icone nome="check" />
+                  Taxas do Mercado Pago, sem nada a mais da nossa parte
+                </li>
               </ul>
               {temBotao ? (
-                <Botao href="/painel/pagamentos/conectar">Conectar Mercado Pago</Botao>
+                <div>
+                  <Botao href="/painel/pagamentos/conectar">Conectar Mercado Pago</Botao>
+                </div>
               ) : (
-                <p class="aviso aviso--erro">A conexão com um clique ainda não foi ativada na plataforma. Use a chave de acesso abaixo.</p>
+                <Nota tipo="info">A conexão com um clique ainda não foi ativada na plataforma. Use a chave de acesso abaixo.</Nota>
               )}
-            </div>
+            </>
           )}
         </Cartao>
 
@@ -82,14 +100,23 @@ export function rotasRecebimento(app: AppPainel) {
                 Abra <strong>Credenciais de produção</strong> e copie o <strong>Access Token</strong> — começa com <code>APP_USR-</code>.
               </li>
             </ol>
-            <form method="post" action="/painel/pagamentos/chave" class="form">
-              <Campo rotulo="Access Token de produção" nome="token" obrigatorio placeholder="APP_USR-..." autocomplete="off" max={300} />
-              <Botao tipo="secundario">Conectar</Botao>
+            <form method="post" action="/painel/pagamentos/chave" class="form" data-enviando="Conferindo a chave…">
+              <Campo
+                rotulo="Access Token de produção"
+                nome="token"
+                obrigatorio
+                placeholder="APP_USR-..."
+                autocomplete="off"
+                max={300}
+                ajuda="A chave fica guardada cifrada e só é usada para criar cobranças e consultar pagamentos da sua loja."
+              />
+              <div>
+                <Botao tipo="secundario">Conectar</Botao>
+              </div>
             </form>
-            <p class="campo__ajuda">A chave fica guardada cifrada e só é usada para criar cobranças e consultar pagamentos da sua loja.</p>
           </Cartao>
         )}
-      </>,
+      </div>,
     )
   })
 
@@ -175,77 +202,73 @@ export function rotasRecebimento(app: AppPainel) {
       c,
       { ativo: 'plano', titulo: 'Plano' },
       <>
-        <Cartao titulo="Situação">
+        <Cartao titulo="Situação" acao={<EtiquetaPlano s={s} status={l.assinatura_status} />}>
           {s.tipo === 'assinante' && (
             <p>
-              <Etiqueta cor={s.atrasada ? 'amarelo' : 'verde'}>{s.atrasada ? 'Pagamento atrasado' : 'Assinatura ativa'}</Etiqueta> Plano{' '}
-              <strong>{atual?.nome}</strong>, {atual ? reais(atual.preco_centavos) : ''}/mês
+              Plano <strong>{atual?.nome}</strong>, {atual ? reais(atual.preco_centavos) : ''}/mês
               {l.assinatura_valida_ate ? ` · ${noTesteDoStripe ? 'primeira cobrança' : 'próxima cobrança'} em ${dataBR(l.assinatura_valida_ate)}` : ''}.
             </p>
           )}
           {s.tipo === 'assinante' && s.atrasada && (
-            <p class="aviso aviso--erro">O cartão foi recusado. O Stripe vai tentar de novo nos próximos dias — atualize o cartão para não perder a loja.</p>
+            <Nota tipo="erro">O cartão foi recusado. O Stripe vai tentar de novo nos próximos dias: atualize o cartão para não perder a loja.</Nota>
           )}
           {s.tipo === 'teste' && (
             <p>
-              <Etiqueta cor="azul">Teste grátis</Etiqueta> Termina em {dataBR(s.ate)} ({plural(diasAte(s.ate), 'dia', 'dias')}). Assinando agora, a primeira cobrança só
-              acontece quando o teste acabar.
+              O teste termina em {dataBR(s.ate)} ({plural(diasAte(s.ate), 'dia', 'dias')}). Assinando agora, a primeira cobrança só acontece quando o teste acabar.
             </p>
           )}
-          {s.tipo === 'cancelada' && (
-            <p>
-              <Etiqueta cor="amarelo">Cancelada</Etiqueta> A loja fica no ar até {dataBR(s.ate)} e a assinatura não renova.
-            </p>
-          )}
+          {s.tipo === 'cancelada' && <p>A loja fica no ar até {dataBR(s.ate)} e a assinatura não renova.</p>}
           {s.tipo === 'vencida' && l.assinatura_status === 'past_due' && (
-            <p>
-              <Etiqueta cor="vermelho">Fora do ar</Etiqueta> A mensalidade está atrasada há mais de 14 dias. Atualize o cartão: assim que o Stripe conseguir cobrar, a loja
-              volta do jeito que estava.
-            </p>
+            <p>A mensalidade está atrasada há mais de 14 dias. Atualize o cartão: assim que o Stripe conseguir cobrar, a loja volta do jeito que estava.</p>
           )}
-          {s.tipo === 'vencida' && l.assinatura_status !== 'past_due' && (
-            <p>
-              <Etiqueta cor="vermelho">Fora do ar</Etiqueta> Assine um plano e a loja volta na hora, do jeito que estava.
-            </p>
-          )}
-          {!ligado && <p class="aviso aviso--erro">A cobrança das assinaturas ainda não foi ativada na plataforma.</p>}
+          {s.tipo === 'vencida' && l.assinatura_status !== 'past_due' && <p>Assine um plano e a loja volta na hora, do jeito que estava.</p>}
+          {!ligado && <Nota tipo="info">A cobrança das assinaturas ainda não foi ativada na plataforma. Os botões de assinar ficam desligados até lá.</Nota>}
           {ligado && l.stripe_cliente_id && (
-            <p>
-              <Botao href="/painel/plano/cartao" tipo="secundario" pequeno>
+            <div>
+              <Botao href="/painel/plano/cartao" tipo="secundario" pequeno icone="pagamentos">
                 Trocar cartão e ver faturas
               </Botao>
-            </p>
+            </div>
           )}
         </Cartao>
 
-        <form method="post" action={comAssinatura ? '/painel/plano/trocar' : '/painel/plano/assinar'}>
+        <form method="post" action={comAssinatura ? '/painel/plano/trocar' : '/painel/plano/assinar'} data-enviando={comAssinatura ? 'Trocando…' : 'Abrindo o pagamento…'}>
           <CartoesPlanos
             planos={lista}
-            acao={(p) =>
+            acao={(p, destaque) =>
               comAssinatura && atual?.id === p.id ? (
-                <span class="plano__atual">Seu plano</span>
+                <span class="plano__atual">
+                  <Icone nome="check" /> Seu plano
+                </span>
               ) : (
-                <Botao nome="plano" valor={p.id} tipo={comAssinatura ? 'secundario' : 'principal'}>
+                <Botao
+                  nome="plano"
+                  valor={p.id}
+                  largo
+                  tipo={destaque && !comAssinatura ? 'principal' : 'secundario'}
+                  desabilitado={!ligado}
+                  confirmar={comAssinatura ? `Mudar para o plano ${p.nome}? O novo valor, ${reais(p.preco_centavos)}/mês, vale a partir da próxima cobrança.` : undefined}
+                  confirmarCom={comAssinatura ? `Mudar para ${p.nome}` : undefined}
+                >
                   {comAssinatura ? `Mudar para ${p.nome}` : `Assinar ${p.nome}`}
                 </Botao>
               )
             }
           />
         </form>
-        {!comAssinatura && ligado && <p class="texto-suave">Pagamento no cartão de crédito, pelo ambiente seguro do Stripe. Cancele quando quiser.</p>}
+        {!comAssinatura && ligado && <p class="campo__ajuda">Pagamento no cartão de crédito, pelo ambiente seguro do Stripe. Cancele quando quiser.</p>}
 
         {s.tipo === 'assinante' && (
-          <Cartao titulo="Cancelar">
-            <p class="texto-suave">A loja continua no ar até o fim do período já pago. Depois sai do ar, mas nada é apagado: assinando de novo, volta igual.</p>
+          <Cartao class="cartao--perigo" titulo="Cancelar assinatura" descricao="A loja continua no ar até o fim do período já pago. Depois sai do ar, mas nada é apagado: assinando de novo, volta igual.">
             <form method="post" action="/painel/plano/cancelar">
-              <Botao tipo="fantasma" pequeno confirmar="Cancelar a assinatura? A loja fica no ar até o fim do período pago.">
+              <Botao tipo="perigo" confirmar="Cancelar a assinatura? A loja fica no ar até o fim do período pago." confirmarCom="Cancelar assinatura">
                 Cancelar assinatura
               </Botao>
             </form>
           </Cartao>
         )}
         {s.tipo === 'cancelada' && comAssinatura && (
-          <Cartao titulo="Mudou de ideia?">
+          <Cartao titulo="Mudou de ideia?" descricao="A assinatura volta a renovar e nada muda na loja.">
             <form method="post" action="/painel/plano/reativar">
               <Botao>Continuar assinando</Botao>
             </form>
@@ -270,13 +293,16 @@ export function rotasRecebimento(app: AppPainel) {
     }
   })
 
-  const acao = (caminho: string, fazer: (c: any) => Promise<string>, erro: string) =>
+  const acao = (caminho: string, fazer: (c: Ctx) => Promise<string>, erro: string) =>
     app.post(caminho, async (c) => {
       try {
         avisar(c, await fazer(c))
       } catch (e) {
-        console.error(`[${caminho}]`, e)
-        avisar(c, erro, 'erro')
+        if (e instanceof ErroDeEscolha) avisar(c, e.message, 'erro')
+        else {
+          console.error(`[${caminho}]`, e)
+          avisar(c, erro, 'erro')
+        }
       }
       return c.redirect('/painel/plano')
     })
@@ -285,7 +311,7 @@ export function rotasRecebimento(app: AppPainel) {
     '/plano/trocar',
     async (c) => {
       const p = await buscarPlano(c.env, campo((await c.req.parseBody()).plano, 40))
-      if (!p || !p.ativo) return 'Escolha um plano.'
+      if (!p || !p.ativo) throw new ErroDeEscolha('Escolha um plano.')
       await trocarPlano(c.env, c.get('loja'), p)
       return `Plano trocado para ${p.nome}. O novo valor vale a partir da próxima cobrança.`
     },

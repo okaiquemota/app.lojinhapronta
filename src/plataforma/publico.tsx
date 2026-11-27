@@ -6,7 +6,7 @@ import { Hono } from 'hono'
 import type { Env, Plano } from '../tipos'
 import { TelaCentral } from './layout'
 import { PaginaInicial } from './site'
-import { Botao, Campo, avisar, lerAviso, type Aviso } from './ui'
+import { Botao, Campo, Etiqueta, Icone, avisar, lerAviso, type Aviso } from './ui'
 import { planos as listarPlanos } from '../lib/lojas'
 import { agora, campo, emailValido, lista, reais, slugificar, somarDias } from '../lib/formato'
 import { slugValido } from '../lib/dominio'
@@ -19,25 +19,35 @@ const app = new Hono<{ Bindings: Env }>()
 
 // ── apresentação ───────────────────────────────────────────────────────────
 
-export function CartoesPlanos({ planos, acao }: { planos: Plano[]; acao?: (p: Plano) => any }) {
+/** O plano em destaque é o último (o mais completo). `acao` desenha o botão de cada um. */
+export function CartoesPlanos({ planos, acao }: { planos: Plano[]; acao?: (p: Plano, destaque: boolean) => any }) {
   return (
     <div class="planos">
-      {planos.map((p, i) => (
-        <article class={`plano${i === planos.length - 1 ? ' plano--destaque' : ''}`}>
-          <h3>{p.nome}</h3>
-          <p class="plano__desc">{p.descricao}</p>
-          <p class="plano__preco">
-            <strong>{reais(p.preco_centavos)}</strong>
-            <span>/mês</span>
-          </p>
-          <ul>
-            {lista(p.recursos).map((r) => (
-              <li>{r}</li>
-            ))}
-          </ul>
-          {acao ? acao(p) : <Botao href="/cadastro">Começar teste grátis</Botao>}
-        </article>
-      ))}
+      {planos.map((p, i) => {
+        const destaque = i === planos.length - 1 && planos.length > 1
+        return (
+          <article class={`plano${destaque ? ' plano--destaque' : ''}`}>
+            <div class="plano__topo">
+              <h3>{p.nome}</h3>
+              {destaque && <Etiqueta cor="azul">Recomendado</Etiqueta>}
+            </div>
+            <p class="plano__desc">{p.descricao}</p>
+            <p class="plano__preco">
+              <strong>{reais(p.preco_centavos)}</strong>
+              <span>/mês</span>
+            </p>
+            <ul class="lista-check">
+              {lista(p.recursos).map((r) => (
+                <li>
+                  <Icone nome="check" />
+                  {r}
+                </li>
+              ))}
+            </ul>
+            {acao ? acao(p, destaque) : <Botao href="/cadastro" largo tipo={destaque ? 'principal' : 'secundario'}>Começar teste grátis</Botao>}
+          </article>
+        )
+      })}
     </div>
   )
 }
@@ -76,8 +86,13 @@ function FormCadastro({ env, d, erros, aviso }: { env: Env; d: DadosCadastro; er
       titulo="Crie sua loja"
       subtitulo={`${env.DIAS_TESTE} dias grátis, sem cartão. Você pode mudar tudo depois.`}
       aviso={aviso}
+      rodape={
+        <>
+          Já tem loja? <a href="/entrar">Entrar</a>
+        </>
+      }
     >
-      <form method="post" action="/cadastro" class="form form--etapas" data-etapas data-etapa-inicial={String(inicial)}>
+      <form method="post" action="/cadastro" class="form form--etapas" data-etapas data-etapa-inicial={String(inicial)} data-enviando="Criando a loja…">
         <ol class="etapas" aria-label="Etapas do cadastro">
           {ETAPAS.map((t, i) => (
             <li data-indicador={String(i + 1)} class={i + 1 === inicial ? 'atual' : i + 1 < inicial ? 'feita' : undefined}>
@@ -100,10 +115,14 @@ function FormCadastro({ env, d, erros, aviso }: { env: Env; d: DadosCadastro; er
             placeholder="ateliedaana"
             autocomplete="off"
             erro={erros.slug}
-            ajuda={<span data-slug-status>Só letras sem acento, números e hífen.</span>}
+            ajuda={
+              <span data-slug-status aria-live="polite">
+                Só letras sem acento, números e hífen.
+              </span>
+            }
           />
           <div class="etapa__botoes">
-            <button type="button" class="botao botao--principal" data-avancar>
+            <button type="button" class="botao botao--principal botao--grande" data-avancar>
               Continuar
             </button>
           </div>
@@ -115,10 +134,10 @@ function FormCadastro({ env, d, erros, aviso }: { env: Env; d: DadosCadastro; er
           <Campo rotulo="E-mail" nome="email" tipo="email" valor={d.email} obrigatorio max={200} autocomplete="email" modo="email" erro={erros.email} ajuda="É por ele que você entra no painel e recebe os avisos de venda." />
           <Campo rotulo="Confirme o e-mail" nome="email2" tipo="email" valor={d.email2} obrigatorio max={200} autocomplete="off" modo="email" erro={erros.email2} />
           <div class="etapa__botoes">
-            <button type="button" class="botao botao--fantasma" data-voltar>
+            <button type="button" class="botao botao--secundario botao--grande" data-voltar>
               Voltar
             </button>
-            <button type="button" class="botao botao--principal" data-avancar>
+            <button type="button" class="botao botao--principal botao--grande" data-avancar>
               Continuar
             </button>
           </div>
@@ -145,18 +164,21 @@ function FormCadastro({ env, d, erros, aviso }: { env: Env; d: DadosCadastro; er
             </label>
           </div>
           <AntiRobo env={env} />
-          {erros.robo && <p class="campo__erro">{erros.robo}</p>}
+          {erros.robo && (
+            <p class="campo__erro" role="alert">
+              <Icone nome="alerta" />
+              {erros.robo}
+            </p>
+          )}
           <div class="etapa__botoes">
-            <button type="button" class="botao botao--fantasma" data-voltar>
+            <button type="button" class="botao botao--secundario botao--grande" data-voltar>
               Voltar
             </button>
-            <Botao>Criar minha loja</Botao>
+            <Botao grande>
+              Criar minha loja
+            </Botao>
           </div>
         </fieldset>
-
-        <p class="form__rodape">
-          Já tem loja? <a href="/entrar">Entrar</a>
-        </p>
       </form>
     </TelaCentral>
   )
@@ -255,14 +277,25 @@ function voltaSegura(v: string | undefined): string {
 
 function FormEntrar({ env, email, volta, aviso }: { env: Env; email?: string; volta?: string; aviso?: Aviso | null }) {
   return (
-    <TelaCentral titulo="Entrar" subtitulo="Acesse o painel da sua loja." aviso={aviso}>
+    <TelaCentral
+      titulo="Entrar"
+      subtitulo="Acesse o painel da sua loja."
+      aviso={aviso}
+      rodape={
+        <>
+          Ainda não tem loja? <a href="/cadastro">Criar loja grátis</a>
+        </>
+      }
+    >
       <form method="post" action={`/entrar${volta ? `?volta=${encodeURIComponent(volta)}` : ''}`} class="form">
         <Campo rotulo="E-mail" nome="email" tipo="email" valor={email} obrigatorio max={200} autocomplete="username" modo="email" autofocus={!email} />
         <Campo rotulo="Senha" nome="senha" tipo="password" obrigatorio max={128} autocomplete="current-password" autofocus={!!email} />
         <AntiRobo env={env} />
-        <Botao>Entrar</Botao>
+        <Botao grande largo>
+          Entrar
+        </Botao>
         <p class="form__rodape">
-          <a href="/esqueci">Esqueci a senha</a> · <a href="/cadastro">Criar loja</a>
+          <a href="/esqueci">Esqueci a senha</a>
         </p>
       </form>
     </TelaCentral>
@@ -314,7 +347,9 @@ app.get('/esqueci', (c) =>
       <form method="post" action="/esqueci" class="form">
         <Campo rotulo="E-mail da conta" nome="email" tipo="email" obrigatorio max={200} autocomplete="email" modo="email" autofocus />
         <AntiRobo env={c.env} />
-        <Botao>Enviar link</Botao>
+        <Botao grande largo>
+          Enviar link
+        </Botao>
         <p class="form__rodape">
           <a href="/entrar">Voltar para entrar</a>
         </p>
@@ -369,7 +404,9 @@ app.get('/redefinir/:token', (c) =>
     <TelaCentral titulo="Nova senha">
       <form method="post" class="form">
         <Campo rotulo="Nova senha" nome="senha" tipo="password" obrigatorio min={8} max={128} autocomplete="new-password" autofocus />
-        <Botao>Salvar e entrar</Botao>
+        <Botao grande largo>
+          Salvar e entrar
+        </Botao>
       </form>
     </TelaCentral>,
   ),
@@ -391,7 +428,9 @@ app.post('/redefinir/:token', async (c) => {
       <TelaCentral titulo="Nova senha" aviso={{ tipo: 'erro', texto: eSenha }}>
         <form method="post" class="form">
           <Campo rotulo="Nova senha" nome="senha" tipo="password" obrigatorio min={8} max={128} autocomplete="new-password" autofocus />
-          <Botao>Salvar e entrar</Botao>
+          <Botao grande largo>
+          Salvar e entrar
+        </Botao>
         </form>
       </TelaCentral>,
       422,

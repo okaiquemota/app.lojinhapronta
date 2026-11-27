@@ -1,27 +1,48 @@
-// @vitest-environment jsdom
+/**
+ * O JS do painel (public/_lp/plataforma.js.txt) num navegador de mentira (jsdom):
+ * o limite de tamanho tem de avisar antes de qualquer envio.
+ */
+import { describe, it } from 'node:test'
+import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
-import { beforeAll, describe, expect, it, vi } from 'vitest'
+import { JSDOM } from 'jsdom'
 import { MB } from '../src/lib/limites'
 
 const js = readFileSync(resolve(process.cwd(), 'public/_lp/plataforma.js.txt'), 'utf8')
 
+/** Monta o formulário de produto como o CampoArquivo (ui.tsx) desenha. */
 function montar() {
-  document.body.innerHTML = `
-    <form data-envio-direto="/painel/arquivos" data-enviando="Salvando…">
-      <div class="campo">
-        <input id="c-arquivo" type="file" name="arquivo" data-direto data-max-bytes="${50 * MB}" data-max-texto="50 MB" data-pode-subir="sim" />
-        <input type="hidden" name="arquivo_key" value="" />
-        <p class="campo__erro" data-erro-arquivo hidden></p>
+  const dom = new JSDOM(
+    `<form method="post" data-envio-direto="/painel/arquivos" data-enviando="Salvando…">
+      <div class="campo campo-arquivo">
+        <label for="c-arquivo">Enviar arquivo</label>
+        <input id="c-arquivo" type="file" name="arquivo" data-direto data-max-bytes="${50 * MB}" data-max-texto="50 MB" data-pode-subir="sim" aria-describedby="c-arquivo-ajuda" />
+        <p class="campo__ajuda" id="c-arquivo-ajuda">até 50 MB</p>
       </div>
+      <input type="hidden" name="arquivo_key" value="" />
       <button>Salvar produto</button>
-    </form>`
-  return document.querySelector<HTMLInputElement>('#c-arquivo')!
+    </form>`,
+    { runScripts: 'outside-only' },
+  )
+  const w = dom.window as any
+  let envios = 0
+  w.XMLHttpRequest = class {
+    upload = {}
+    open() {}
+    setRequestHeader() {}
+    send() {
+      envios++
+    }
+  }
+  w.eval(js)
+  const input = w.document.querySelector('#c-arquivo') as HTMLInputElement
+  return { w, doc: w.document as Document, input, envios: () => envios }
 }
 
 /** jsdom não deixa escolher arquivo de verdade: simula a escolha (e o "limpar" do input). */
-function escolher(input: HTMLInputElement, bytes: number, disparar = true) {
-  const f = new File(['x'], 'apostila.pdf', { type: 'application/pdf' })
+function escolher(w: any, input: HTMLInputElement, bytes: number, disparar = true) {
+  const f = new w.File(['x'], 'apostila.pdf', { type: 'application/pdf' })
   Object.defineProperty(f, 'size', { value: bytes })
   let escolhido: File | null = f
   Object.defineProperty(input, 'files', { configurable: true, get: () => (escolhido ? [escolhido] : []) })
@@ -32,43 +53,49 @@ function escolher(input: HTMLInputElement, bytes: number, disparar = true) {
       if (v === '') escolhido = null
     },
   })
-  if (disparar) input.dispatchEvent(new Event('change', { bubbles: true }))
+  if (disparar) input.dispatchEvent(new w.Event('change', { bubbles: true }))
 }
 
-beforeAll(() => {
-  window.alert = vi.fn()
-  new Function(js)()
-})
+const erroDe = (doc: Document) => doc.querySelector<HTMLElement>('.campo__erro')
 
 describe('painel: limite de tamanho no navegador', () => {
   it('avisa na hora e descarta um PDF de 1 GB', () => {
-    const input = montar()
-    escolher(input, 1024 * MB)
-    const erro = document.querySelector<HTMLElement>('[data-erro-arquivo]')!
-    expect(erro.hidden).toBe(false)
-    expect(erro.textContent).toBe('O arquivo tem 1024 MB e o máximo do seu plano é 50 MB. Comprima o PDF, divida em partes ou mude de plano para enviar arquivos maiores.')
-    expect(input.closest('.campo')!.classList.contains('campo--erro')).toBe(true)
-    expect(input.value).toBe('')
+    const { w, doc, input } = montar()
+    escolher(w, input, 1024 * MB)
+    const erro = erroDe(doc)!
+    assert.equal(erro.hidden, false)
+    assert.equal(
+      erro.textContent,
+      'O arquivo tem 1024 MB e o máximo do seu plano é 50 MB. Comprima o PDF, divida em partes ou mude de plano para enviar arquivos maiores.',
+    )
+    assert.ok(input.closest('.campo')!.classList.contains('campo--erro'))
+    assert.equal(input.getAttribute('aria-invalid'), 'true')
+    assert.equal(input.getAttribute('aria-describedby'), 'c-arquivo-erro c-arquivo-ajuda')
+    assert.equal(input.value, '')
   })
 
   it('aceita arquivo dentro do limite e limpa o erro anterior', () => {
-    const input = montar()
-    escolher(input, 1024 * MB)
-    escolher(input, 10 * MB)
-    const erro = document.querySelector<HTMLElement>('[data-erro-arquivo]')!
-    expect(erro.hidden).toBe(true)
-    expect(input.value).not.toBe('')
+    const { w, doc, input } = montar()
+    escolher(w, input, 1024 * MB)
+    escolher(w, input, 10 * MB)
+    assert.equal(erroDe(doc)!.hidden, true)
+    assert.equal(input.getAttribute('aria-invalid'), null)
+    assert.notEqual(input.value, '')
   })
 
   it('não começa o envio de um arquivo grande demais', () => {
-    const input = montar()
-    const xhr = vi.fn()
-    ;(window as any).XMLHttpRequest = xhr
+    const { w, doc, input, envios } = montar()
     // escolhe sem disparar o "change" (ex.: arrastou o arquivo), e tenta salvar
-    escolher(input, 200 * MB, false)
-    const form = input.form!
-    form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
-    expect(xhr).not.toHaveBeenCalled()
-    expect(document.querySelector<HTMLElement>('[data-erro-arquivo]')!.textContent).toContain('200 MB')
+    escolher(w, input, 200 * MB, false)
+    input.form!.dispatchEvent(new w.Event('submit', { bubbles: true, cancelable: true }))
+    assert.equal(envios(), 0)
+    assert.match(erroDe(doc)!.textContent!, /200 MB/)
+  })
+
+  it('envia direto o arquivo que cabe', () => {
+    const { w, input, envios } = montar()
+    escolher(w, input, 10 * MB)
+    input.form!.dispatchEvent(new w.Event('submit', { bubbles: true, cancelable: true }))
+    assert.equal(envios(), 1)
   })
 })

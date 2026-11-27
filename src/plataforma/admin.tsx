@@ -39,11 +39,11 @@ admin.get('/', async (c) => {
   ).first<{ v: number }>()
   const tag = (l: Loja) => {
     const s = situacao(l)
-    if (s.tipo === 'assinante') return s.atrasada ? <Etiqueta cor="amarelo">pagamento atrasado</Etiqueta> : <Etiqueta cor="verde">{l.assinatura_status === 'trialing' ? 'assinante (no teste)' : 'assinante'}</Etiqueta>
-    if (s.tipo === 'teste') return <Etiqueta cor="azul">teste até {dataBR(s.ate)}</Etiqueta>
-    if (s.tipo === 'cancelada') return <Etiqueta cor="amarelo">cancelada</Etiqueta>
-    if (s.tipo === 'fechada') return <Etiqueta>fechada</Etiqueta>
-    return <Etiqueta cor="vermelho">fora do ar</Etiqueta>
+    if (s.tipo === 'assinante') return s.atrasada ? <Etiqueta cor="amarelo">Pagamento atrasado</Etiqueta> : <Etiqueta cor="verde">{l.assinatura_status === 'trialing' ? 'Assinante (no teste)' : 'Assinante'}</Etiqueta>
+    if (s.tipo === 'teste') return <Etiqueta cor="azul">Teste até {dataBR(s.ate)}</Etiqueta>
+    if (s.tipo === 'cancelada') return <Etiqueta cor="amarelo">Cancelada</Etiqueta>
+    if (s.tipo === 'fechada') return <Etiqueta>Fechada</Etiqueta>
+    return <Etiqueta cor="vermelho">Fora do ar</Etiqueta>
   }
 
   return c.html(

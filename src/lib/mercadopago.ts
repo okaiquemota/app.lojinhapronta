@@ -23,6 +23,9 @@ export class ErroMP extends Error {
   }
 }
 
+/** Sem resposta em 15 s, desiste: quem chamou trata o erro como "tente de novo". */
+const TEMPO_LIMITE = 15_000
+
 async function chamar<T>(token: string, metodo: string, caminho: string, corpo?: unknown, idempotencia?: string): Promise<T> {
   const headers: Record<string, string> = {
     Authorization: `Bearer ${token}`,
@@ -33,6 +36,7 @@ async function chamar<T>(token: string, metodo: string, caminho: string, corpo?:
     method: metodo,
     headers,
     body: corpo === undefined ? undefined : JSON.stringify(corpo),
+    signal: AbortSignal.timeout(TEMPO_LIMITE),
   })
   const texto = await r.text()
   let json: unknown = texto
@@ -138,6 +142,7 @@ export async function trocarCodigo(clientId: string, clientSecret: string, code:
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ client_id: clientId, client_secret: clientSecret, grant_type: 'authorization_code', code, redirect_uri: redirectUri }),
+    signal: AbortSignal.timeout(TEMPO_LIMITE),
   })
   const j = await r.json()
   if (!r.ok) throw new ErroMP(r.status, j)
@@ -149,6 +154,7 @@ export async function renovarToken(clientId: string, clientSecret: string, refre
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ client_id: clientId, client_secret: clientSecret, grant_type: 'refresh_token', refresh_token: refreshToken }),
+    signal: AbortSignal.timeout(TEMPO_LIMITE),
   })
   const j = await r.json()
   if (!r.ok) throw new ErroMP(r.status, j)

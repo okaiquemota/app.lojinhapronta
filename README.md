@@ -57,9 +57,10 @@ dias. Cancelou: fica no ar até o fim do mês pago. Venceu: a vitrine mostra
 | `src/lib/stripe.ts` | cliente da API do Stripe e conferência dos avisos |
 | `src/lib/conta-mp.ts` | conta MP de cada lojista (token cifrado, renovação) |
 | `src/webhooks.ts` | avisos do Mercado Pago |
-| `testes/` | testes automáticos (`npm run testar`) |
 | `migrations/` | esquema do banco (D1) e os planos iniciais |
-| `public/_lp/` | CSS, JS e ícones do painel e da vitrine (entram no Worker como texto: `src/estaticos.ts`) |
+| `public/_lp/` | CSS, JS e imagens do painel, da vitrine e da apresentação (entram no Worker: `src/estaticos.ts`) |
+| `public/_lp/tokens.css` | escala de tipo, espaço, raio, sombra e cor: a base das três folhas de estilo |
+| `testes/` | testes das regras (dinheiro, endereço, assinatura, senha, tamanho de arquivo): `npm test` |
 | `ferramentas/mp-falso.py` | Mercado Pago de mentira, para testar venda sem dinheiro |
 | `ferramentas/stripe-falso.py` | Stripe de mentira, para testar a mensalidade sem cartão |
 
@@ -82,13 +83,34 @@ npm run dev
 ```
 
 Abra <http://localhost:8787>, crie uma loja e veja a vitrine em
-`http://localhost:8787/loja/<endereço>` (ou `http://<endereço>.localhost:8787`).
-
-Testes automáticos (não precisam do servidor rodando):
+`http://localhost:8787/loja/<endereço>/`. Para isso o `.dev.vars` precisa de
+`SUBDOMINIOS_ATIVOS=nao` (já está no exemplo): com `sim`, esse caminho manda
+para o subdomínio de produção.
 
 ```bash
-npm run testar
+npm run checar
 ```
+
+```bash
+npm test
+```
+
+## Visual
+
+Painel, vitrine e apresentação usam o mesmo sistema. `public/_lp/tokens.css`
+tem a escala inteira (tipo, espaço em múltiplos de 4px, raio, sombra, cor) e
+vai na frente de cada folha de estilo. Regras da casa:
+
+- nenhum valor solto nas folhas de estilo: tamanho, espaço, raio e cor saem
+  dos tokens (todos os textos passam no contraste AA)
+- pontos de quebra só em 640, 960 e 1280px
+- coral (`--acento`) só na ação principal da tela; petróleo é a marca
+- serifado (Fraunces) só nos títulos da apresentação; o resto é Inter
+- sombra só no que flutua (diálogo, barra de salvar, menu aberto)
+- na vitrine, toda cor vem de `--marca` e `--destaque`, que a lojista escolhe
+
+A versão dos arquivos de `/_lp/` é calculada pelo conteúdo: não há número
+para trocar à mão a cada mudança.
 
 ## Tamanho dos arquivos à venda
 
@@ -100,6 +122,10 @@ qualquer envio acima de 100 MB. Mudar o limite de um plano é um `UPDATE` no
 banco, sem deploy.
 
 ## Colocar no ar
+
+**Migração nova:** a versão de 27/11/2026 traz `migrations/0002_indice_avisos.sql`
+(um índice). Rode `npm run banco:remoto` antes do `npm run deploy`; sem ela o
+site funciona, só a conta de avisos do Mercado Pago fica mais lenta.
 
 **Já feito (25/11/2026):** banco D1 e bucket R2 criados, esquema aplicado,
 `SEGREDO_APP` e `STRIPE_SECRET_KEY` cadastrados, domínio no Cloudflare e o

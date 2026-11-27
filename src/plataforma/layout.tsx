@@ -5,9 +5,10 @@ import { urlDaLoja, enderecoVisivel } from '../lib/dominio'
 import { situacaoDaAssinatura } from '../lib/lojas'
 import { diasAte, plural } from '../lib/formato'
 import { ehAdmin } from '../lib/sessao'
+import { urlEstatico } from '../estaticos'
 import { CaixaAviso, Icone, type Aviso } from './ui'
 
-const VERSAO = "3"
+const FONTES = 'https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap'
 
 export function Documento(p: PropsWithChildren<{ titulo: string; descricao?: string; indexar?: boolean; classe?: string }>) {
   return (
@@ -20,16 +21,13 @@ export function Documento(p: PropsWithChildren<{ titulo: string; descricao?: str
           <title>{p.titulo}</title>
           {p.descricao && <meta name="description" content={p.descricao} />}
           {!p.indexar && <meta name="robots" content="noindex" />}
-          <meta name="theme-color" content="#0a2531" />
-          <link rel="icon" type="image/svg+xml" href="/_lp/favicon.svg" />
+          <meta name="theme-color" content="#f6f6f4" />
+          <link rel="icon" type="image/svg+xml" href={urlEstatico('favicon.svg')} />
           <link rel="preconnect" href="https://fonts.googleapis.com" />
           <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="" />
-          <link
-            rel="stylesheet"
-            href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,600;9..144,700&family=Inter:wght@400;500;600;700&display=swap"
-          />
-          <link rel="stylesheet" href={`/_lp/plataforma.css?v=${VERSAO}`} />
-          <script src={`/_lp/plataforma.js?v=${VERSAO}`} defer></script>
+          <link rel="stylesheet" href={FONTES} />
+          <link rel="stylesheet" href={urlEstatico('plataforma.css')} />
+          <script src={urlEstatico('plataforma.js')} defer></script>
         </head>
         <body class={p.classe}>{p.children}</body>
       </html>
@@ -65,53 +63,50 @@ const MENU: { href: string; texto: string; icone: string; chave: string }[] = [
 /** Faixa no topo do painel com o estado do teste / assinatura. */
 function FaixaPlano({ loja }: { loja: Loja }) {
   const s = situacaoDaAssinatura(loja)
+  const faixa = (tipo: 'info' | 'alerta' | 'erro', texto: Child, link: { href: string; texto: string }) => (
+    <div class={`faixa-plano faixa-plano--${tipo}`} role={tipo === 'erro' ? 'alert' : undefined}>
+      <span>{texto}</span>
+      <a href={link.href}>{link.texto}</a>
+    </div>
+  )
   if (s.tipo === 'assinante' && s.atrasada) {
-    return (
-      <div class="faixa-plano faixa-plano--forte">
-        <span>
-          <strong>O pagamento da mensalidade falhou.</strong> Atualize o cartão para a loja não sair do ar.
-        </span>
-        <a href="/painel/plano/cartao">Atualizar cartão</a>
-      </div>
+    return faixa(
+      'erro',
+      <>
+        <strong>O pagamento da mensalidade falhou.</strong> Atualize o cartão para a loja não sair do ar.
+      </>,
+      { href: '/painel/plano/cartao', texto: 'Atualizar cartão' },
     )
   }
   if (s.tipo === 'assinante') return null
   if (s.tipo === 'teste') {
     const d = diasAte(s.ate)
-    return (
-      <div class="faixa-plano">
-        <span>
-          Teste grátis: <strong>{d <= 1 ? 'termina hoje' : `faltam ${plural(d, 'dia', 'dias')}`}</strong>. Assine para a loja continuar no ar.
-        </span>
-        <a href="/painel/plano">Escolher plano</a>
-      </div>
+    return faixa(
+      'info',
+      <>
+        Teste grátis: <strong>{d <= 1 ? 'termina hoje' : `faltam ${plural(d, 'dia', 'dias')}`}</strong>. Assine para a loja continuar no ar.
+      </>,
+      { href: '/painel/plano', texto: 'Escolher plano' },
     )
   }
   if (s.tipo === 'cancelada') {
-    return (
-      <div class="faixa-plano">
-        <span>Assinatura cancelada. A loja sai do ar em {plural(diasAte(s.ate), 'dia', 'dias')}.</span>
-        <a href="/painel/plano">Reativar</a>
-      </div>
-    )
+    return faixa('alerta', <>Assinatura cancelada. A loja sai do ar em {plural(diasAte(s.ate), 'dia', 'dias')}.</>, { href: '/painel/plano', texto: 'Reativar' })
   }
   if (loja.assinatura_status === 'past_due') {
-    return (
-      <div class="faixa-plano faixa-plano--forte">
-        <span>
-          <strong>Sua loja está fora do ar.</strong> A mensalidade está atrasada há mais de 14 dias. Assim que o cartão passar, ela volta.
-        </span>
-        <a href="/painel/plano/cartao">Atualizar cartão</a>
-      </div>
+    return faixa(
+      'erro',
+      <>
+        <strong>Sua loja está fora do ar.</strong> A mensalidade está atrasada há mais de 14 dias. Assim que o cartão passar, ela volta.
+      </>,
+      { href: '/painel/plano/cartao', texto: 'Atualizar cartão' },
     )
   }
-  return (
-    <div class="faixa-plano faixa-plano--forte">
-      <span>
-        <strong>Sua loja está fora do ar.</strong> {loja.assinatura_id ? 'A assinatura terminou' : 'O teste grátis acabou'} — assine um plano para voltar a vender.
-      </span>
-      <a href="/painel/plano">Assinar agora</a>
-    </div>
+  return faixa(
+    'erro',
+    <>
+      <strong>Sua loja está fora do ar.</strong> {loja.assinatura_id ? 'A assinatura terminou' : 'O teste grátis acabou'}: assine um plano para voltar a vender.
+    </>,
+    { href: '/painel/plano', texto: 'Assinar agora' },
   )
 }
 
@@ -121,20 +116,30 @@ export function Painel(
   const url = urlDaLoja(p.env, p.loja)
   return (
     <Documento titulo={`${p.titulo} · ${p.loja.nome}`} classe="corpo-painel">
-      <input type="checkbox" id="menu-aberto" class="menu-chave" hidden />
-      <aside class="lateral">
+      <a class="pular" href="#conteudo">
+        Pular para o conteúdo
+      </a>
+      {/* Sem JS, o menu do celular abre por esta caixa. Ela recebe o foco do
+          teclado no celular e acende o botão de menu (ver plataforma.css). */}
+      <input type="checkbox" id="menu-aberto" class="menu-chave" aria-label="Menu do painel" aria-controls="menu-lateral" />
+      <aside class="lateral" id="menu-lateral">
         <div class="lateral__topo">
           <Marca href="/painel" />
+          <label for="menu-aberto" class="botao-icone lateral__fechar" aria-hidden="true">
+            <Icone nome="fechar" />
+          </label>
         </div>
         <a class="lateral__loja" href={url} target="_blank" rel="noopener">
           <span class="lateral__loja-nome">{p.loja.nome}</span>
           <span class="lateral__loja-url">
-            {enderecoVisivel(p.env, p.loja)} <Icone nome="externo" />
+            <span>{enderecoVisivel(p.env, p.loja)}</span>
+            <Icone nome="externo" />
+            <span class="sr-only">(abre em outra aba)</span>
           </span>
         </a>
         <nav class="lateral__menu" aria-label="Painel">
           {MENU.map((m) => (
-            <a href={m.href} class={m.chave === p.ativo ? 'ativo' : undefined} aria-current={m.chave === p.ativo ? 'page' : undefined}>
+            <a href={m.href} aria-current={m.chave === p.ativo ? 'page' : undefined}>
               <Icone nome={m.icone} />
               {m.texto}
             </a>
@@ -142,11 +147,11 @@ export function Painel(
         </nav>
         <div class="lateral__rodape">
           {ehAdmin(p.env, p.usuario.email) && (
-            <a href="/admin" class={p.ativo === 'admin' ? 'ativo' : undefined}>
+            <a href="/admin" aria-current={p.ativo === 'admin' ? 'page' : undefined}>
               <Icone nome="admin" /> Administração
             </a>
           )}
-          <a href="/painel/conta" class={p.ativo === 'conta' ? 'ativo' : undefined}>
+          <a href="/painel/conta" aria-current={p.ativo === 'conta' ? 'page' : undefined}>
             <Icone nome="conta" /> Minha conta
           </a>
           <form method="post" action="/sair">
@@ -158,27 +163,29 @@ export function Painel(
       </aside>
       <label for="menu-aberto" class="veu" aria-hidden="true"></label>
       <div class="principal">
-        <FaixaPlano loja={p.loja} />
-        <header class="topo">
-          <label for="menu-aberto" class="topo__menu" aria-label="Abrir menu">
+        <div class="barra-celular">
+          <label for="menu-aberto" class="botao-icone barra-celular__menu" aria-hidden="true">
             <Icone nome="menu" />
           </label>
-          <div class="topo__titulo">
-            {p.voltar && (
-              <a class="topo__voltar" href={p.voltar.href}>
-                ← {p.voltar.texto}
-              </a>
-            )}
-            <h1>{p.titulo}</h1>
-          </div>
-          <div class="topo__acoes">
-            {p.acoes}
-            <a class="botao botao--secundario botao--pequeno so-largo" href={url} target="_blank" rel="noopener">
-              Ver loja <Icone nome="externo" />
-            </a>
-          </div>
-        </header>
-        <main class="conteudo">
+          <Marca href="/painel" />
+          <a class="botao-icone" href={url} target="_blank" rel="noopener" aria-label="Ver a loja (abre em outra aba)">
+            <Icone nome="externo" />
+          </a>
+        </div>
+        <FaixaPlano loja={p.loja} />
+        <main class="conteudo" id="conteudo" tabindex={-1}>
+          <header class="cabecalho-pagina">
+            <div class="cabecalho-pagina__titulo">
+              {p.voltar && (
+                <a class="voltar" href={p.voltar.href}>
+                  <Icone nome="voltar" />
+                  {p.voltar.texto}
+                </a>
+              )}
+              <h1>{p.titulo}</h1>
+            </div>
+            {p.acoes && <div class="cabecalho-pagina__acoes">{p.acoes}</div>}
+          </header>
           <CaixaAviso aviso={p.aviso} />
           {p.children}
         </main>
@@ -188,14 +195,10 @@ export function Painel(
 }
 
 /** Tela simples centralizada: entrar, cadastro, redefinir senha. */
-export function TelaCentral(p: PropsWithChildren<{ titulo: string; subtitulo?: Child; aviso?: Aviso | null; largo?: boolean }>) {
+export function TelaCentral(p: PropsWithChildren<{ titulo: string; subtitulo?: Child; aviso?: Aviso | null; largo?: boolean; rodape?: Child }>) {
   return (
     <Documento titulo={`${p.titulo} · Lojinha Pronta`} classe="corpo-central">
-      <div class="central__aurora" aria-hidden="true">
-        <span></span>
-        <span></span>
-      </div>
-      <div class={`central${p.largo ? ' central--largo' : ''}`}>
+      <main class={`central${p.largo ? ' central--largo' : ''}`}>
         <Marca />
         <div class="central__caixa">
           <h1>{p.titulo}</h1>
@@ -203,7 +206,25 @@ export function TelaCentral(p: PropsWithChildren<{ titulo: string; subtitulo?: C
           <CaixaAviso aviso={p.aviso} />
           {p.children}
         </div>
-      </div>
+        {p.rodape && <p class="central__rodape">{p.rodape}</p>}
+      </main>
     </Documento>
+  )
+}
+
+/** Página de erro da plataforma (404, 500), com saída para algum lugar. */
+export function PaginaErro({ titulo, texto }: { titulo: string; texto: string }) {
+  return (
+    <TelaCentral titulo={titulo}>
+      <p class="central__texto">{texto}</p>
+      <div class="pilha-botoes">
+        <a class="botao botao--principal botao--largo" href="/painel">
+          Ir para o painel
+        </a>
+        <a class="botao botao--fantasma botao--largo" href="/">
+          Página inicial
+        </a>
+      </div>
+    </TelaCentral>
   )
 }

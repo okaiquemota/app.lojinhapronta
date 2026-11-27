@@ -1,9 +1,59 @@
 // Painel: ajudas que deixam o formulário mais agradável. Sem JS, tudo funciona.
 
-// Confirmação antes de ações sem volta.
-document.addEventListener('click', (e) => {
+// ── diálogo (no lugar de confirm/alert/prompt do navegador) ────────────────
+const dialogo = (() => {
+  let el
+  const montar = () => {
+    if (el) return el
+    el = document.createElement('dialog')
+    el.className = 'dialogo'
+    el.innerHTML =
+      '<form method="dialog"><div class="dialogo__corpo"><h2></h2><p></p></div>' +
+      '<div class="dialogo__acoes"><button value="nao" class="botao botao--secundario">Cancelar</button>' +
+      '<button value="sim" class="botao botao--principal"></button></div></form>'
+    document.body.appendChild(el)
+    return el
+  }
+  /** Abre e devolve true se a pessoa confirmou. */
+  const perguntar = ({ titulo, texto, ok = 'Confirmar', cancelar = 'Cancelar', perigo = false, extra }) =>
+    new Promise((resolve) => {
+      const d = montar()
+      d.querySelector('h2').textContent = titulo
+      d.querySelector('p').textContent = texto || ''
+      d.querySelector('p').hidden = !texto
+      const corpo = d.querySelector('.dialogo__corpo')
+      corpo.querySelectorAll('[data-extra]').forEach((x) => x.remove())
+      if (extra) {
+        extra.dataset.extra = ''
+        corpo.appendChild(extra)
+      }
+      const [nao, sim] = d.querySelectorAll('.dialogo__acoes button')
+      nao.textContent = cancelar
+      nao.hidden = !cancelar
+      sim.textContent = ok
+      sim.className = `botao ${perigo ? 'botao--perigo-cheio' : 'botao--principal'}`
+      d.returnValue = ''
+      d.onclose = () => resolve(d.returnValue === 'sim')
+      d.showModal()
+      ;(extra?.querySelector?.('input') || (extra?.tagName === 'INPUT' ? extra : null) || (perigo ? nao : sim)).focus()
+    })
+  return { perguntar }
+})()
+
+// Confirmação antes de ações sem volta: o botão só envia depois do "sim".
+document.addEventListener('click', async (e) => {
   const botao = e.target.closest('[data-confirmar]')
-  if (botao && !confirm(botao.dataset.confirmar)) e.preventDefault()
+  if (!botao || botao.dataset.confirmado) return
+  e.preventDefault()
+  const sim = await dialogo.perguntar({
+    titulo: botao.dataset.confirmar,
+    ok: botao.dataset.confirmarCom || botao.textContent.trim(),
+    perigo: 'perigo' in botao.dataset,
+  })
+  if (!sim) return
+  botao.dataset.confirmado = '1'
+  botao.click()
+  delete botao.dataset.confirmado
 })
 
 // Copiar link.
@@ -13,11 +63,54 @@ document.addEventListener('click', async (e) => {
   try {
     await navigator.clipboard.writeText(b.dataset.copiar)
     const antes = b.innerHTML
-    b.textContent = 'Copiado!'
+    b.textContent = 'Copiado'
+    b.setAttribute('aria-live', 'polite')
     setTimeout(() => (b.innerHTML = antes), 1600)
   } catch {
-    prompt('Copie o link:', b.dataset.copiar)
+    const campo = document.createElement('input')
+    campo.readOnly = true
+    campo.value = b.dataset.copiar
+    campo.setAttribute('aria-label', 'Link')
+    campo.addEventListener('focus', () => campo.select())
+    dialogo.perguntar({ titulo: 'Copie o link', texto: 'Selecione e copie o endereço abaixo.', ok: 'Fechar', cancelar: '', extra: campo })
   }
+})
+
+// Mostra um erro dentro do formulário (no lugar de alert).
+function erroNoFormulario(form, texto) {
+  let caixa = form.querySelector('[data-erro-envio]')
+  if (!caixa) {
+    caixa = document.createElement('div')
+    caixa.className = 'aviso aviso--erro'
+    caixa.setAttribute('role', 'alert')
+    caixa.dataset.erroEnvio = ''
+    form.prepend(caixa)
+  }
+  caixa.textContent = texto
+  caixa.scrollIntoView({ block: 'center', behavior: 'smooth' })
+}
+
+// Trava o botão durante o envio: mostra que está indo e impede o clique duplo.
+// O setTimeout deixa o navegador montar os dados antes (botão desabilitado não
+// manda o próprio name/value).
+function travar(botao, texto) {
+  if (!botao) return
+  setTimeout(() => {
+    botao.dataset.textoOriginal ??= botao.textContent
+    botao.disabled = true
+    botao.setAttribute('aria-busy', 'true')
+    if (texto) botao.textContent = texto
+  }, 0)
+}
+function destravar(botao) {
+  if (!botao) return
+  botao.disabled = false
+  botao.removeAttribute('aria-busy')
+  if (botao.dataset.textoOriginal) botao.textContent = botao.dataset.textoOriginal
+}
+// Voltar pela seta do navegador traz a página da memória: destrava.
+addEventListener('pageshow', (e) => {
+  if (e.persisted) document.querySelectorAll('button[aria-busy]').forEach(destravar)
 })
 
 // Tamanho máximo do arquivo à venda (o servidor confere de novo; src/lib/limites.ts).
@@ -34,14 +127,28 @@ const erroDeTamanho = (input, arquivo) => {
     : 'Comprima o PDF ou divida em partes (ex.: volume 1 e volume 2).'
   return `O arquivo tem ${mbTexto(arquivo.size)} e o máximo do seu plano é ${input.dataset.maxTexto || mbTexto(max)}. ${dica}`
 }
+// O erro aparece embaixo do campo, como os erros que vêm do servidor (ui.tsx, ErroDoCampo).
 const mostrarErroArquivo = (input, msg) => {
   const caixa = input.closest('.campo')
-  const p = caixa?.querySelector('[data-erro-arquivo]')
-  caixa?.classList.toggle('campo--erro', !!msg)
+  if (!caixa) return
+  const id = `${input.id}-erro`
+  let p = caixa.querySelector('.campo__erro')
+  if (msg && !p) {
+    p = document.createElement('p')
+    p.className = 'campo__erro'
+    p.id = id
+    p.setAttribute('role', 'alert')
+    input.after(p)
+  }
+  caixa.classList.toggle('campo--erro', !!msg)
+  if (msg) input.setAttribute('aria-invalid', 'true')
+  else input.removeAttribute('aria-invalid')
   if (p) {
     p.textContent = msg
     p.hidden = !msg
-  } else if (msg) alert(msg)
+  }
+  const ajuda = caixa.querySelector('.campo__ajuda')?.id
+  input.setAttribute('aria-describedby', [msg ? id : '', ajuda || ''].filter(Boolean).join(' '))
 }
 document.addEventListener('change', (e) => {
   const input = e.target
@@ -71,8 +178,11 @@ document.addEventListener('submit', (e) => {
     return
   }
   const botao = e.submitter || form.querySelector('button:not([type=button])')
-  const textoOriginal = botao?.textContent
-  if (botao) botao.disabled = true
+  if (botao) {
+    botao.dataset.textoOriginal ??= botao.textContent
+    botao.disabled = true
+    botao.setAttribute('aria-busy', 'true')
+  }
   const xhr = new XMLHttpRequest()
   xhr.open('PUT', url)
   xhr.setRequestHeader('Content-Type', arquivo.type || 'application/octet-stream')
@@ -81,11 +191,8 @@ document.addEventListener('submit', (e) => {
     if (botao && ev.lengthComputable) botao.textContent = `Enviando arquivo… ${Math.round((ev.loaded / ev.total) * 100)}%`
   }
   const falhou = (msg) => {
-    if (botao) {
-      botao.disabled = false
-      botao.textContent = textoOriginal
-    }
-    alert(msg || 'O envio do arquivo falhou. Confira a internet e tente de novo.')
+    destravar(botao)
+    erroNoFormulario(form, msg || 'O envio do arquivo falhou. Confira a internet e tente de novo.')
   }
   xhr.onerror = () => falhou()
   xhr.onload = () => {
@@ -107,15 +214,11 @@ document.addEventListener('submit', (e) => {
   xhr.send(arquivo)
 })
 
-// Botão de enviar trava e avisa enquanto o upload acontece.
+// Todo formulário que muda alguma coisa trava o botão enquanto envia.
 document.addEventListener('submit', (e) => {
   const form = e.target
-  const botao = e.submitter || form.querySelector('button[type=submit], button:not([type])')
-  if (!botao || !form.dataset.enviando) return
-  setTimeout(() => {
-    botao.disabled = true
-    botao.textContent = form.dataset.enviando
-  }, 0)
+  if (e.defaultPrevented || (form.method || '').toLowerCase() !== 'post' || form.hasAttribute('data-sem-trava')) return
+  travar(e.submitter || form.querySelector('button[type=submit], button:not([type])'), form.dataset.enviando)
 })
 
 // Endereço da loja: sugere a partir do nome e diz se está livre.
@@ -124,6 +227,7 @@ document.addEventListener('submit', (e) => {
   const slug = document.querySelector('input[name=slug]')
   const status = document.querySelector('[data-slug-status]')
   if (!slug || !status) return
+  const padrao = status.textContent
   let mexeu = !!slug.value
   const limpar = (t) =>
     t.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 40)
@@ -132,16 +236,20 @@ document.addEventListener('submit', (e) => {
     clearTimeout(timer)
     const v = limpar(slug.value)
     if (!v) {
-      status.textContent = 'Só letras sem acento, números e hífen.'
+      status.textContent = padrao
       status.parentElement.removeAttribute('data-livre')
       return
     }
     timer = setTimeout(async () => {
       try {
         const r = await fetch(`/api/endereco?s=${encodeURIComponent(v)}`).then((r) => r.json())
-        status.textContent = r.livre ? `✓ ${r.slug} está livre` : r.motivo
+        status.textContent = r.livre ? `${r.slug} está livre` : r.motivo
         status.parentElement.dataset.livre = r.livre ? 'sim' : 'nao'
-      } catch {}
+      } catch {
+        // Sem resposta, volta ao texto de ajuda: o servidor confere ao enviar.
+        status.textContent = padrao
+        status.parentElement.removeAttribute('data-livre')
+      }
     }, 300)
   }
   nome?.addEventListener('input', () => {
@@ -164,6 +272,7 @@ document.addEventListener('submit', (e) => {
   const marca = document.querySelector('[data-cor=marca]')
   const destaque = document.querySelector('[data-cor=destaque]')
   const aviso = previa.querySelector('[data-contraste]')
+  const paletas = [...document.querySelectorAll('[data-paleta]')]
   const luz = (hex) => {
     const c = [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16) / 255).map((v) => (v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4))
     return 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2]
@@ -173,15 +282,15 @@ document.addEventListener('submit', (e) => {
     previa.style.setProperty('--destaque', destaque.value)
     const contraste = 1.05 / (luz(destaque.value) + 0.05)
     aviso.textContent = contraste < 3.5 ? 'A cor dos botões está clara demais: o texto branco fica difícil de ler no celular.' : ''
+    paletas.forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.paleta === `${marca.value},${destaque.value}`)))
   }
   marca.addEventListener('input', atualizar)
   destaque.addEventListener('input', atualizar)
-  document.querySelectorAll('[data-paleta]').forEach((b) =>
+  paletas.forEach((b) =>
     b.addEventListener('click', () => {
       const [m, d] = b.dataset.paleta.split(',')
       marca.value = m
       destaque.value = d
-      document.querySelectorAll('[data-paleta]').forEach((x) => x.classList.toggle('ativa', x === b))
       atualizar()
     }),
   )
@@ -230,18 +339,20 @@ document.addEventListener('change', async (e) => {
     b.type = 'button'
     b.className = 'campo-senha__ver'
     b.setAttribute('aria-label', 'Mostrar senha')
+    b.setAttribute('aria-pressed', 'false')
     b.innerHTML = olho
     b.addEventListener('click', () => {
       const ver = input.type === 'password'
       input.type = ver ? 'text' : 'password'
       b.innerHTML = ver ? fechado : olho
-      b.setAttribute('aria-label', ver ? 'Esconder senha' : 'Mostrar senha')
+      b.setAttribute('aria-pressed', String(ver))
       input.focus()
     })
     caixa.appendChild(b)
     const aviso = document.createElement('p')
     aviso.className = 'caps-aviso'
     aviso.hidden = true
+    aviso.setAttribute('role', 'status')
     aviso.textContent = 'Caps Lock está ligado'
     caixa.after(aviso)
     const caps = (e) => {
@@ -258,6 +369,22 @@ document.addEventListener('change', async (e) => {
     i.setAttribute('autocapitalize', 'none')
     i.setAttribute('spellcheck', 'false')
     i.setAttribute('autocorrect', 'off')
+  })
+})()
+
+// Menu do celular: Esc fecha, e o foco vai para o primeiro item ao abrir.
+;(() => {
+  const chave = document.getElementById('menu-aberto')
+  if (!chave) return
+  // O menu fica invisível até a transição começar: foca no quadro seguinte.
+  chave.addEventListener('change', () => {
+    if (chave.checked) setTimeout(() => document.querySelector('.lateral__menu a')?.focus(), 60)
+  })
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && chave.checked) {
+      chave.checked = false
+      chave.focus()
+    }
   })
 })()
 
@@ -323,15 +450,20 @@ document.addEventListener('change', async (e) => {
     e.preventDefault()
     if (valida(atual)) mostrar(atual + 1, true)
   })
-  form.addEventListener('submit', (e) => {
-    for (let n = 1; n <= etapas.length; n++) {
-      if (!valida(n)) {
-        e.preventDefault()
-        mostrar(n, false)
-        valida(n)
-        return
+  form.addEventListener(
+    'submit',
+    (e) => {
+      for (let n = 1; n <= etapas.length; n++) {
+        if (!valida(n)) {
+          e.preventDefault()
+          e.stopImmediatePropagation()
+          mostrar(n, false)
+          valida(n)
+          return
+        }
       }
-    }
-  })
+    },
+    true,
+  )
   mostrar(atual, atual > 1)
 })()
