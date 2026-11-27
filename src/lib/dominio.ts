@@ -1,4 +1,5 @@
 import type { AlvoLoja, Env, Loja } from '../tipos'
+import { slugificar } from './formato'
 
 /**
  * Subdomínios que não podem virar loja: são da plataforma, de e-mail, ou
@@ -23,6 +24,20 @@ export function slugValido(slug: string): string | null {
   if (slug.includes('--')) return 'Não use dois hífens seguidos.'
   if (RESERVADOS.has(slug)) return 'Esse endereço é reservado. Escolha outro.'
   return null
+}
+
+/**
+ * Endereço tirado do nome da loja, para quem não escolheu um no cadastro.
+ * Sempre devolve um endereço válido: nome curto, só com símbolos ou reservado
+ * ganha "loja-" na frente. `n` > 1 acrescenta "-n" (para quando já tem dona).
+ */
+export function slugDoNome(nome: string, n = 1): string {
+  const sufixo = n > 1 ? `-${n}` : ''
+  const caber = (s: string) => s.slice(0, 40 - sufixo.length).replace(/-+$/g, '')
+  let base = slugificar(nome, 40)
+  if (slugValido(base)) base = slugificar(`loja-${base}`, 40)
+  if (slugValido(base)) base = 'minha-loja'
+  return caber(base) + sufixo
 }
 
 /**
