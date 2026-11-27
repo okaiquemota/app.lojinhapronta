@@ -9,7 +9,7 @@ import { PaginaInicial } from './site'
 import { Botao, Campo, Etiqueta, Icone, avisar, lerAviso, type Aviso } from './ui'
 import { planos as listarPlanos } from '../lib/lojas'
 import { agora, campo, emailValido, lista, reais, slugificar, somarDias } from '../lib/formato'
-import { slugValido } from '../lib/dominio'
+import { enderecoVisivel, slugDoNome, slugValido } from '../lib/dominio'
 import { conferirSenha, gerarId, gerarToken, hashSenha, sha256 } from '../lib/seguranca'
 import { abrirSessao, fecharSessao, limparTentativas, registrarTentativa, tentativasRecentes, usuarioDaSessao } from '../lib/sessao'
 import { contarPorIp, excedeuPorIp, gastarTempoDeSenha, passouNoTurnstile, problemaNaSenha, turnstileLigado } from '../lib/protecao'
@@ -70,6 +70,8 @@ function AntiRobo({ env }: { env: Env }) {
   )
 }
 
+const AJUDA_SLUG = 'Se deixar em branco, criamos a partir do nome da loja. Só letras sem acento, números e hífen.'
+
 const MSG_ROBO = 'Não conseguimos confirmar que é você. Recarregue a página e tente de novo.'
 
 type DadosCadastro = { nome: string; email: string; email2: string; loja: string; slug: string }
@@ -106,10 +108,9 @@ function FormCadastro({ env, d, erros, aviso }: { env: Env; d: DadosCadastro; er
           <legend>Sua loja</legend>
           <Campo rotulo="Nome da loja" nome="loja" valor={d.loja} obrigatorio max={60} placeholder="Ex.: Ateliê da Ana" erro={erros.loja} autofocus />
           <Campo
-            rotulo="Endereço da loja"
+            rotulo="Endereço da loja (opcional)"
             nome="slug"
             valor={d.slug}
-            obrigatorio
             max={40}
             sufixo={`.${env.DOMINIO_RAIZ}`}
             placeholder="ateliedaana"
@@ -117,7 +118,7 @@ function FormCadastro({ env, d, erros, aviso }: { env: Env; d: DadosCadastro; er
             erro={erros.slug}
             ajuda={
               <span data-slug-status aria-live="polite">
-                Só letras sem acento, números e hífen.
+                {AJUDA_SLUG}
               </span>
             }
           />
@@ -193,12 +194,24 @@ app.get('/cadastro', async (c) => {
 app.get('/api/endereco', async (c) => {
   if (await excedeuPorIp(c, 'endereco', 200, 15)) return c.json({ livre: false, motivo: 'Muitas consultas. Espere um pouco.' }, 429)
   await contarPorIp(c, 'endereco')
+  // Campo vazio: mostra qual endereço a loja vai ganhar a partir do nome.
+  const nome = c.req.query('nome')
+  if (nome !== undefined) return c.json({ slug: await slugLivreDoNome(c.env, nome), livre: true, auto: true })
   const slug = slugificar(c.req.query('s') ?? '', 40)
   const erro = slugValido(slug)
   if (erro) return c.json({ slug, livre: false, motivo: erro })
   const existe = await c.env.DB.prepare('SELECT 1 FROM lojas WHERE slug = ?').bind(slug).first()
   return c.json({ slug, livre: !existe, motivo: existe ? 'Esse endereço já tem dona. Tente outro.' : null })
 })
+
+/** Primeiro endereço livre tirado do nome: "ateliedaana", "ateliedaana-2"… */
+async function slugLivreDoNome(env: Env, nome: string): Promise<string> {
+  for (let n = 1; n < 50; n++) {
+    const s = slugDoNome(nome, n)
+    if (!(await env.DB.prepare('SELECT 1 FROM lojas WHERE slug = ?').bind(s).first())) return s
+  }
+  return slugDoNome(nome, 1000 + Math.floor(Math.random() * 9000))
+}
 
 app.post('/cadastro', async (c) => {
   const f = await c.req.parseBody()
@@ -207,8 +220,10 @@ app.post('/cadastro', async (c) => {
     email: campo(f.email, 200).toLowerCase(),
     email2: campo(f.email2, 200).toLowerCase(),
     loja: campo(f.loja, 60),
-    slug: slugificar(campo(f.slug || f.loja, 60), 40),
+    slug: slugificar(campo(f.slug, 60), 40),
   }
+  // Endereço é opcional: em branco, sai do nome da loja (e nunca dá "já tem dona").
+  const slugAutomatico = !d.slug
   const senha = String(f.senha ?? '')
   const erros: Record<string, string> = {}
   if (f.site) return c.text('Não foi possível criar a loja.', 400) // isca preenchida: robô
@@ -220,7 +235,7 @@ app.post('/cadastro', async (c) => {
     return c.html(<FormCadastro env={c.env} d={d} erros={{ robo: MSG_ROBO }} />, 400)
   }
   if (d.loja.length < 2) erros.loja = 'Dê um nome para a loja.'
-  const eSlug = slugValido(d.slug)
+  const eSlug = slugAutomatico ? null : slugValido(d.slug)
   if (eSlug) erros.slug = eSlug
   if (d.nome.length < 2) erros.nome = 'Como você se chama?'
   if (!emailValido(d.email)) erros.email = 'E-mail inválido.'
@@ -232,12 +247,13 @@ app.post('/cadastro', async (c) => {
   if (!erros.email && (await c.env.DB.prepare('SELECT 1 FROM usuarios WHERE email = ?').bind(d.email).first())) {
     erros.email = 'Já existe uma conta com esse e-mail. Entre por ela.'
   }
-  if (!erros.slug && (await c.env.DB.prepare('SELECT 1 FROM lojas WHERE slug = ?').bind(d.slug).first())) {
+  if (!slugAutomatico && !erros.slug && (await c.env.DB.prepare('SELECT 1 FROM lojas WHERE slug = ?').bind(d.slug).first())) {
     erros.slug = 'Esse endereço já tem dona. Tente outro.'
   }
   if (Object.keys(erros).length) {
     return c.html(<FormCadastro env={c.env} d={d} erros={erros} />, 422)
   }
+  const slug = slugAutomatico ? await slugLivreDoNome(c.env, d.loja) : d.slug
 
   const usuarioId = gerarId()
   const lojaId = gerarId()
@@ -254,16 +270,17 @@ app.post('/cadastro', async (c) => {
       c.env.DB.prepare(
         `INSERT INTO lojas (id, dono_id, slug, nome, descricao, email_contato, responsavel, teste_ate, criada_em, atualizada_em)
          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      ).bind(lojaId, usuarioId, d.slug, d.loja, 'Material digital para baixar na hora.', d.email, d.nome, somarDias(t, Number(c.env.DIAS_TESTE) || 7), t, t),
+      ).bind(lojaId, usuarioId, slug, d.loja, 'Material digital para baixar na hora.', d.email, d.nome, somarDias(t, Number(c.env.DIAS_TESTE) || 7), t, t),
     ])
   } catch (e) {
     // Corrida: alguém pegou o mesmo e-mail ou endereço no mesmo segundo.
     console.error('[cadastro]', e)
-    return c.html(<FormCadastro env={c.env} d={d} erros={{ slug: 'Esse endereço acabou de ser usado. Tente outro.' }} />, 409)
+    const erro: Record<string, string> = slugAutomatico ? { loja: 'Não deu para criar agora. Tente de novo.' } : { slug: 'Esse endereço acabou de ser usado. Tente outro.' }
+    return c.html(<FormCadastro env={c.env} d={d} erros={erro} />, 409)
   }
   await contarPorIp(c, 'cadastro')
   await abrirSessao(c, usuarioId)
-  avisar(c, 'Sua loja foi criada! Siga os passos abaixo para começar a vender.')
+  avisar(c, `Sua loja foi criada em ${enderecoVisivel(c.env, { slug, dominio: null })}! Siga os passos abaixo para começar a vender.`)
   return c.redirect('/painel')
 })
 
