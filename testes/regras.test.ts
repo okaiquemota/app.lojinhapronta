@@ -36,10 +36,10 @@ function loja(parcial: Partial<Loja> = {}): Loja {
 
 describe('dinheiro', () => {
   it('escreve reais com milhar e centavos', () => {
-    assert.equal(reais(0), 'R$ 0,00')
-    assert.equal(reais(1990), 'R$ 19,90')
-    assert.equal(reais(123456), 'R$ 1.234,56')
-    assert.equal(reais(-150), '-R$ 1,50')
+    assert.equal(reais(0), 'R$\u00a00,00')
+    assert.equal(reais(1990), 'R$\u00a019,90')
+    assert.equal(reais(123456), 'R$\u00a01.234,56')
+    assert.equal(reais(-150), '-R$\u00a01,50')
   })
   it('lê o preço do jeito que a lojista digita', () => {
     assert.equal(centavosDeTexto('19,90'), 1990)

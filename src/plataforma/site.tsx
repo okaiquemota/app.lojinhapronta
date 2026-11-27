@@ -22,7 +22,7 @@ const FONTES = 'https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..1
 const ico = (svg: string) => raw(svg)
 
 function centavos(v: number) {
-  const r = reais(v).replace('R$ ', '')
+  const r = reais(v).replace(/^R\$\s/, '')
   const [inteiro, cent] = r.split(',')
   return { inteiro, cent }
 }
@@ -203,6 +203,8 @@ const PERGUNTAS = [
 ]
 
 export function PaginaInicial({ env, planos }: { env: Env; planos: Plano[] }) {
+  // A página mora em lojinhapronta.com.br; cadastro e login, em app.
+  const app = env.APP_URL
   const dias = Number(env.DIAS_TESTE) || 7
   const menor = planos.reduce((m, p) => Math.min(m, p.preco_centavos), Infinity)
   const ano = new Date().getUTCFullYear()
@@ -266,10 +268,10 @@ export function PaginaInicial({ env, planos }: { env: Env; planos: Plano[] }) {
                 ))}
               </nav>
               <div class="navbar__acoes">
-                <a class="navbar__entrar" href="/entrar">
+                <a class="navbar__entrar" href={`${app}/entrar`}>
                   Entrar
                 </a>
-                <a class="btn btn--primario btn--pequeno" href="/cadastro">
+                <a class="btn btn--primario btn--pequeno" href={`${app}/cadastro`}>
                   Criar minha loja
                 </a>
                 <button class="navbar__menu" type="button" aria-expanded="false" aria-controls="menu-celular" aria-label="Abrir menu">
@@ -283,8 +285,8 @@ export function PaginaInicial({ env, planos }: { env: Env; planos: Plano[] }) {
                 {LINKS.map((l) => (
                   <a href={l.href}>{l.texto}</a>
                 ))}
-                <a href="/entrar">Já tenho loja · Entrar</a>
-                <a class="btn btn--primario btn--grande btn--largo" href="/cadastro">
+                <a href={`${app}/entrar`}>Já tenho loja · Entrar</a>
+                <a class="btn btn--primario btn--grande btn--largo" href={`${app}/cadastro`}>
                   Criar minha loja grátis
                 </a>
               </nav>
@@ -304,7 +306,7 @@ export function PaginaInicial({ env, planos }: { env: Env; planos: Plano[] }) {
                     hora, sozinho.
                   </p>
                   <div class="capa__botoes">
-                    <a class="btn btn--primario btn--grande" href="/cadastro">
+                    <a class="btn btn--primario btn--grande" href={`${app}/cadastro`}>
                       Criar minha loja grátis
                     </a>
                     <a class="btn btn--secundario btn--grande" href="#preco">
@@ -370,7 +372,7 @@ export function PaginaInicial({ env, planos }: { env: Env; planos: Plano[] }) {
                       <h3>{p.titulo}</h3>
                       <p>{p.texto}</p>
                       {p.link && (
-                        <a class="link-seta" href={p.link.href} target={p.link.externo ? '_blank' : undefined} rel={p.link.externo ? 'noopener noreferrer' : undefined}>
+                        <a class="link-seta" href={p.link.externo ? p.link.href : `${app}${p.link.href}`} target={p.link.externo ? '_blank' : undefined} rel={p.link.externo ? 'noopener noreferrer' : undefined}>
                           {p.link.texto}
                           {p.link.externo ? ico(I.EXTERNO) : null}
                           {p.link.externo && <span class="sr-only"> (abre em outra aba)</span>}
@@ -416,7 +418,7 @@ export function PaginaInicial({ env, planos }: { env: Env; planos: Plano[] }) {
                   <p>
                     Teste tudo por <strong>{dias} dias grátis</strong>, sem cartão.
                   </p>
-                  <a class="btn btn--primario" href="/cadastro">
+                  <a class="btn btn--primario" href={`${app}/cadastro`}>
                     Criar minha loja
                   </a>
                 </div>
@@ -451,7 +453,7 @@ export function PaginaInicial({ env, planos }: { env: Env; planos: Plano[] }) {
                   </div>
                 </article>
                 <p class="secao__nota reveal">
-                  Quer ver a sua no lugar dessa? <a href="/cadastro">Crie a sua agora</a>.
+                  Quer ver a sua no lugar dessa? <a href={`${app}/cadastro`}>Crie a sua agora</a>.
                 </p>
               </div>
             </section>
@@ -484,7 +486,7 @@ export function PaginaInicial({ env, planos }: { env: Env; planos: Plano[] }) {
                             </li>
                           ))}
                         </ul>
-                        <a class={`btn ${destaque ? 'btn--primario' : 'btn--secundario'} btn--largo`} href="/cadastro">
+                        <a class={`btn ${destaque ? 'btn--primario' : 'btn--secundario'} btn--largo`} href={`${app}/cadastro`}>
                           Começar {dias} dias grátis
                         </a>
                         <p class="plano__obs">Sem cartão pra testar. Depois, cobrança mensal no cartão.</p>
@@ -556,7 +558,7 @@ export function PaginaInicial({ env, planos }: { env: Env; planos: Plano[] }) {
                 <div class="cta reveal">
                   <h2 id="titulo-cta">Bora colocar a sua loja no ar?</h2>
                   <p>Cria a conta, escolhe o endereço e cadastra o primeiro material. São {dias} dias grátis, sem cartão: se não fizer sentido, é só não assinar.</p>
-                  <a class="btn btn--primario btn--grande" href="/cadastro">
+                  <a class="btn btn--primario btn--grande" href={`${app}/cadastro`}>
                     Criar minha loja grátis
                   </a>
                   <p class="cta__zap">
@@ -581,10 +583,10 @@ export function PaginaInicial({ env, planos }: { env: Env; planos: Plano[] }) {
                 {LINKS.map((l) => (
                   <a href={l.href}>{l.texto}</a>
                 ))}
-                <a href="/entrar">Entrar</a>
+                <a href={`${app}/entrar`}>Entrar</a>
               </nav>
               <div class="rodape__legal">
-                <p>© {ano} Lojinha Pronta · WhatsApp (16) 98215-7266</p>
+                <p>© {ano} Lojinha Pronta · <span>WhatsApp (16) 98215-7266</span></p>
                 <p>
                   Um produto{' '}
                   <a href="https://movcode.com.br" target="_blank" rel="noopener noreferrer">
@@ -596,7 +598,7 @@ export function PaginaInicial({ env, planos }: { env: Env; planos: Plano[] }) {
           </footer>
 
           <div class="cta-fixo" data-cta-fixo>
-            <a class="btn btn--primario btn--largo" href="/cadastro">
+            <a class="btn btn--primario btn--largo" href={`${app}/cadastro`}>
               Criar minha loja grátis
               <small>{dias} dias pra testar, sem cartão</small>
             </a>
