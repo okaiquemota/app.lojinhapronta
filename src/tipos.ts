@@ -41,6 +41,8 @@ export type Plano = {
   descricao: string
   preco_centavos: number
   limite_produtos: number | null
+  /** MB por arquivo à venda. NULL = teto técnico (src/lib/limites.ts). */
+  limite_arquivo_mb: number | null
   taxa_venda: number
   recursos: string
   ordem: number

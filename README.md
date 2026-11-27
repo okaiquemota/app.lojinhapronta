@@ -51,11 +51,13 @@ dias. Cancelou: fica no ar até o fim do mês pago. Venceu: a vitrine mostra
 | `src/index.tsx` | entrada: decide painel × vitrine pelo endereço; cron diário |
 | `src/plataforma/` | apresentação com planos, cadastro, entrar, painel, `/admin` |
 | `src/loja/` | vitrine: início, categorias, produto, carrinho, pedido, páginas legais |
+| `src/lib/limites.ts` | tamanho máximo do arquivo à venda, por plano |
 | `src/lib/pedidos.ts` | pedido → Mercado Pago → confirmação → liberação |
 | `src/lib/assinaturas.ts` | mensalidade da plataforma (regras) |
 | `src/lib/stripe.ts` | cliente da API do Stripe e conferência dos avisos |
 | `src/lib/conta-mp.ts` | conta MP de cada lojista (token cifrado, renovação) |
 | `src/webhooks.ts` | avisos do Mercado Pago |
+| `testes/` | testes automáticos (`npm run testar`) |
 | `migrations/` | esquema do banco (D1) e os planos iniciais |
 | `public/_lp/` | CSS, JS e ícones do painel e da vitrine (entram no Worker como texto: `src/estaticos.ts`) |
 | `ferramentas/mp-falso.py` | Mercado Pago de mentira, para testar venda sem dinheiro |
@@ -81,6 +83,21 @@ npm run dev
 
 Abra <http://localhost:8787>, crie uma loja e veja a vitrine em
 `http://localhost:8787/loja/<endereço>` (ou `http://<endereço>.localhost:8787`).
+
+Testes automáticos (não precisam do servidor rodando):
+
+```bash
+npm run testar
+```
+
+## Tamanho dos arquivos à venda
+
+Cada plano tem um tamanho máximo por arquivo (`planos.limite_arquivo_mb`):
+Essencial 50 MB, Profissional 95 MB. Durante o teste grátis vale o maior.
+O painel avisa assim que a lojista escolhe o arquivo, e o servidor confere de
+novo antes e depois de gravar. O teto é 95 MB porque a Cloudflare recusa
+qualquer envio acima de 100 MB. Mudar o limite de um plano é um `UPDATE` no
+banco, sem deploy.
 
 ## Colocar no ar
 

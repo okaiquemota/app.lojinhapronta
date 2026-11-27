@@ -8,14 +8,17 @@
     "deploy": "wrangler deploy",
     "checar": "tsc --noEmit",
     "banco:local": "wrangler d1 migrations apply DB --local",
-    "banco:remoto": "wrangler d1 migrations apply DB --remote"
+    "banco:remoto": "wrangler d1 migrations apply DB --remote",
+    "testar": "vitest run"
   },
   "dependencies": {
     "hono": "4.13.17"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "5.20261110.1",
+    "jsdom": "26.1.0",
     "typescript": "5.9.3",
+    "vitest": "3.2.4",
     "wrangler": "4.160.0"
   }
 }
