@@ -113,6 +113,52 @@ addEventListener('pageshow', (e) => {
   if (e.persisted) document.querySelectorAll('button[aria-busy]').forEach(destravar)
 })
 
+// Tamanho máximo do arquivo à venda (o servidor confere de novo; src/lib/limites.ts).
+// Avisa na hora em que a lojista escolhe, sem esperar minutos de envio.
+const mbTexto = (bytes) => {
+  const mb = bytes / 1048576
+  return `${Number.isInteger(mb) ? mb : mb.toFixed(1).replace('.', ',')} MB`
+}
+const erroDeTamanho = (input, arquivo) => {
+  const max = Number(input.dataset.maxBytes)
+  if (!max || arquivo.size <= max) return ''
+  const dica = input.dataset.podeSubir
+    ? 'Comprima o PDF, divida em partes ou mude de plano para enviar arquivos maiores.'
+    : 'Comprima o PDF ou divida em partes (ex.: volume 1 e volume 2).'
+  return `O arquivo tem ${mbTexto(arquivo.size)} e o máximo do seu plano é ${input.dataset.maxTexto || mbTexto(max)}. ${dica}`
+}
+// O erro aparece embaixo do campo, como os erros que vêm do servidor (ui.tsx, ErroDoCampo).
+const mostrarErroArquivo = (input, msg) => {
+  const caixa = input.closest('.campo')
+  if (!caixa) return
+  const id = `${input.id}-erro`
+  let p = caixa.querySelector('.campo__erro')
+  if (msg && !p) {
+    p = document.createElement('p')
+    p.className = 'campo__erro'
+    p.id = id
+    p.setAttribute('role', 'alert')
+    input.after(p)
+  }
+  caixa.classList.toggle('campo--erro', !!msg)
+  if (msg) input.setAttribute('aria-invalid', 'true')
+  else input.removeAttribute('aria-invalid')
+  if (p) {
+    p.textContent = msg
+    p.hidden = !msg
+  }
+  const ajuda = caixa.querySelector('.campo__ajuda')?.id
+  input.setAttribute('aria-describedby', [msg ? id : '', ajuda || ''].filter(Boolean).join(' '))
+}
+document.addEventListener('change', (e) => {
+  const input = e.target
+  if (!input.matches?.('input[type=file][data-max-bytes]')) return
+  const arquivo = input.files?.[0]
+  const msg = arquivo ? erroDeTamanho(input, arquivo) : ''
+  mostrarErroArquivo(input, msg)
+  if (msg) input.value = '' // não deixa um arquivo grande demais ir junto no formulário
+})
+
 // Arquivo do produto vai direto para o armazenamento, com progresso, antes de
 // salvar o formulário. Assim um PDF de 90 MB não passa pela memória do servidor.
 document.addEventListener('submit', (e) => {
@@ -124,6 +170,13 @@ document.addEventListener('submit', (e) => {
   e.preventDefault()
   e.stopImmediatePropagation()
   const arquivo = input.files[0]
+  const grande = erroDeTamanho(input, arquivo)
+  if (grande) {
+    mostrarErroArquivo(input, grande)
+    input.value = ''
+    input.focus()
+    return
+  }
   const botao = e.submitter || form.querySelector('button:not([type=button])')
   if (botao) {
     botao.dataset.textoOriginal ??= botao.textContent
@@ -147,7 +200,12 @@ document.addEventListener('submit', (e) => {
     try {
       r = JSON.parse(xhr.responseText)
     } catch {}
-    if (xhr.status !== 200 || !r.key) return falhou(r.erro)
+    // 413 sem JSON = a Cloudflare cortou antes de chegar ao servidor (mais de 100 MB).
+    if (xhr.status === 413 && !r.erro) r.erro = `Arquivo grande demais. O máximo do seu plano é ${input.dataset.maxTexto || '95 MB'}.`
+    if (xhr.status !== 200 || !r.key) {
+      if (r.erro) mostrarErroArquivo(input, r.erro)
+      return falhou(r.erro)
+    }
     destino.value = r.key
     input.removeAttribute('name') // o arquivo já subiu: não manda de novo
     if (botao) botao.textContent = 'Salvando…'

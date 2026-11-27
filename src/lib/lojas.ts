@@ -1,5 +1,6 @@
 import type { Env, Loja, Plano } from '../tipos'
 import { agora } from './formato'
+import { limiteDoPlano } from './limites'
 
 export async function lojaPorSlug(env: Env, slug: string): Promise<Loja | null> {
   return env.DB.prepare('SELECT * FROM lojas WHERE slug = ?').bind(slug).first<Loja>()
@@ -68,6 +69,12 @@ export async function limiteDeProdutos(env: Env, loja: Loja): Promise<number | n
   if (s.tipo === 'teste') return null
   const p = await plano(env, loja.plano_id)
   return p ? p.limite_produtos : 0
+}
+
+/** Tamanho máximo de cada arquivo à venda, pelo plano atual. Durante o teste vale o maior plano. */
+export async function limiteDeArquivo(env: Env, loja: Loja): Promise<{ max: number; podeSubir: boolean }> {
+  const todos = await planos(env)
+  return limiteDoPlano(todos, loja.plano_id, situacaoDaAssinatura(loja).tipo === 'teste')
 }
 
 export async function contarProdutosAtivos(env: Env, lojaId: string): Promise<number> {

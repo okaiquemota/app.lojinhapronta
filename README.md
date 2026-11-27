@@ -51,6 +51,7 @@ dias. Cancelou: fica no ar até o fim do mês pago. Venceu: a vitrine mostra
 | `src/index.tsx` | entrada: decide painel × vitrine pelo endereço; cron diário |
 | `src/plataforma/` | apresentação com planos, cadastro, entrar, painel, `/admin` |
 | `src/loja/` | vitrine: início, categorias, produto, carrinho, pedido, páginas legais |
+| `src/lib/limites.ts` | tamanho máximo do arquivo à venda, por plano |
 | `src/lib/pedidos.ts` | pedido → Mercado Pago → confirmação → liberação |
 | `src/lib/assinaturas.ts` | mensalidade da plataforma (regras) |
 | `src/lib/stripe.ts` | cliente da API do Stripe e conferência dos avisos |
@@ -59,7 +60,7 @@ dias. Cancelou: fica no ar até o fim do mês pago. Venceu: a vitrine mostra
 | `migrations/` | esquema do banco (D1) e os planos iniciais |
 | `public/_lp/` | CSS, JS e imagens do painel, da vitrine e da apresentação (entram no Worker: `src/estaticos.ts`) |
 | `public/_lp/tokens.css` | escala de tipo, espaço, raio, sombra e cor: a base das três folhas de estilo |
-| `testes/` | testes das regras (dinheiro, endereço, assinatura, senha): `npm test` |
+| `testes/` | testes das regras (dinheiro, endereço, assinatura, senha, tamanho de arquivo): `npm test` |
 | `ferramentas/mp-falso.py` | Mercado Pago de mentira, para testar venda sem dinheiro |
 | `ferramentas/stripe-falso.py` | Stripe de mentira, para testar a mensalidade sem cartão |
 
@@ -110,6 +111,15 @@ vai na frente de cada folha de estilo. Regras da casa:
 
 A versão dos arquivos de `/_lp/` é calculada pelo conteúdo: não há número
 para trocar à mão a cada mudança.
+
+## Tamanho dos arquivos à venda
+
+Cada plano tem um tamanho máximo por arquivo (`planos.limite_arquivo_mb`):
+Essencial 50 MB, Profissional 95 MB. Durante o teste grátis vale o maior.
+O painel avisa assim que a lojista escolhe o arquivo, e o servidor confere de
+novo antes e depois de gravar. O teto é 95 MB porque a Cloudflare recusa
+qualquer envio acima de 100 MB. Mudar o limite de um plano é um `UPDATE` no
+banco, sem deploy.
 
 ## Colocar no ar
 

@@ -6,7 +6,9 @@ import type { Categoria, Produto } from '../../tipos'
 import { agora, campo, centavosDeTexto, centavosParaCampo, lista, plural, reais, slugificar, tamanhoArquivo } from '../../lib/formato'
 import { gerarId } from '../../lib/seguranca'
 import { apagar, arquivoDaLoja, arquivoEnviado, enviarArquivoDireto, guardarArquivo, guardarImagem } from '../../lib/arquivos'
-import { contarProdutosAtivos, limiteDeProdutos, urlImagem } from '../../lib/lojas'
+import type { Limite } from '../../lib/arquivos'
+import { contarProdutosAtivos, limiteDeArquivo, limiteDeProdutos, urlImagem } from '../../lib/lojas'
+import { conferirTamanho, mbTexto } from '../../lib/limites'
 import { urlDaLoja } from '../../lib/dominio'
 
 async function categoriasDa(c: Ctx): Promise<Categoria[]> {
@@ -149,7 +151,19 @@ function valoresDe(p?: Produto | null): Valores {
   }
 }
 
-function Formulario({ produto, v, categorias, erros }: { produto?: Produto | null; v: Valores; categorias: Categoria[]; erros: Record<string, string> }) {
+function Formulario({
+  produto,
+  v,
+  categorias,
+  erros,
+  limite,
+}: {
+  produto?: Produto | null
+  v: Valores
+  categorias: Categoria[]
+  erros: Record<string, string>
+  limite: Limite
+}) {
   const imagens = lista(produto?.imagens)
   return (
     <form method="post" enctype="multipart/form-data" class="form form--produto" data-enviando="Salvando…" data-envio-direto="/painel/arquivos">
@@ -226,8 +240,9 @@ function Formulario({ produto, v, categorias, erros }: { produto?: Produto | nul
               nome="arquivo"
               aceita=".pdf,.zip,.rar,.png,.jpg,.jpeg,.docx,.xlsx,.pptx,.mp3,.mp4,.epub"
               direto
+              limite={limite}
               erro={erros.arquivo}
-              ajuda="PDF, ZIP, imagem ou planilha, até 95 MB. Quem já comprou recebe a versão nova."
+              ajuda={`PDF, ZIP, imagem ou planilha, até ${mbTexto(limite.max)} no seu plano. Quem já comprou recebe a versão nova.`}
             />
             <input type="hidden" name="arquivo_key" value="" />
             <Campo
@@ -290,6 +305,7 @@ async function salvar(c: Ctx, existente: Produto | null): Promise<{ ok: true; id
   if (Object.keys(erros).length) return { ok: false, v, erros }
 
   // arquivos
+  const limiteArq = await limiteDeArquivo(c.env, loja)
   const novasImagens: string[] = []
   let arquivo: { key: string; nome: string; tamanho: number } | null = null
   try {
@@ -300,7 +316,10 @@ async function salvar(c: Ctx, existente: Produto | null): Promise<{ ok: true; id
     if (direto) {
       arquivo = await arquivoDaLoja(c.env, loja.id, direto)
       if (!arquivo) throw new Error('O envio do arquivo não terminou. Tente de novo.')
-    } else if (arq) arquivo = await guardarArquivo(c.env, loja.id, arq)
+      // O envio direto já conferiu; confere de novo caso o plano tenha mudado no meio.
+      const erro = conferirTamanho(arquivo.tamanho, limiteArq.max, limiteArq.podeSubir)
+      if (erro) throw new Error(erro)
+    } else if (arq) arquivo = await guardarArquivo(c.env, loja.id, arq, limiteArq)
   } catch (e) {
     await apagar(c.env, ...novasImagens, arquivo?.key)
     return { ok: false, v, erros: { arquivo: (e as Error).message } }
@@ -392,9 +411,11 @@ export function rotasProdutos(app: AppPainel) {
   app.put('/arquivos', async (c) => {
     try {
       const nome = decodeURIComponent(c.req.header('x-nome-arquivo') ?? 'arquivo.pdf').slice(0, 200)
-      return c.json(await enviarArquivoDireto(c.env, c.get('loja').id, c.req.raw, nome))
+      const loja = c.get('loja')
+      return c.json(await enviarArquivoDireto(c.env, loja.id, c.req.raw, nome, await limiteDeArquivo(c.env, loja)))
     } catch (e) {
-      return c.json({ erro: (e as Error).message }, 400)
+      const msg = (e as Error).message
+      return c.json({ erro: msg }, msg.includes('máximo') ? 413 : 400)
     }
   })
 
@@ -426,7 +447,7 @@ export function rotasProdutos(app: AppPainel) {
     return tela(
       c,
       { ativo: 'produtos', titulo: 'Novo produto', voltar: { href: '/painel/produtos', texto: 'Produtos' } },
-      <Formulario v={valoresDe(null)} categorias={await categoriasDa(c)} erros={{}} />,
+      <Formulario v={valoresDe(null)} categorias={await categoriasDa(c)} erros={{}} limite={await limiteDeArquivo(c.env, c.get('loja'))} />,
     )
   })
 
@@ -436,7 +457,7 @@ export function rotasProdutos(app: AppPainel) {
       return tela(
         c,
         { ativo: 'produtos', titulo: 'Novo produto', voltar: { href: '/painel/produtos', texto: 'Produtos' }, aviso: erroGeral, status: 422 },
-        <Formulario v={r.v} categorias={await categoriasDa(c)} erros={r.erros} />,
+        <Formulario v={r.v} categorias={await categoriasDa(c)} erros={r.erros} limite={await limiteDeArquivo(c.env, c.get('loja'))} />,
       )
     }
     avisar(c, r.aviso, r.aviso.includes('escondido') ? 'erro' : 'ok')
@@ -455,7 +476,7 @@ export function rotasProdutos(app: AppPainel) {
         acoes: verNaLoja(c, p),
       },
       <>
-        <Formulario produto={p} v={valoresDe(p)} categorias={await categoriasDa(c)} erros={{}} />
+        <Formulario produto={p} v={valoresDe(p)} categorias={await categoriasDa(c)} erros={{}} limite={await limiteDeArquivo(c.env, c.get('loja'))} />
         <ZonaDePerigo produto={p} />
       </>,
     )
@@ -470,7 +491,7 @@ export function rotasProdutos(app: AppPainel) {
         c,
         { ativo: 'produtos', titulo: p.nome, voltar: { href: '/painel/produtos', texto: 'Produtos' }, acoes: verNaLoja(c, p), aviso: erroGeral, status: 422 },
         <>
-          <Formulario produto={p} v={r.v} categorias={await categoriasDa(c)} erros={r.erros} />
+          <Formulario produto={p} v={r.v} categorias={await categoriasDa(c)} erros={r.erros} limite={await limiteDeArquivo(c.env, c.get('loja'))} />
           <ZonaDePerigo produto={p} />
         </>,
       )

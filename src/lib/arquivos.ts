@@ -6,6 +6,13 @@
  */
 import type { Env } from '../tipos'
 import { gerarId } from './seguranca'
+import { MAX_ARQUIVO_FORMULARIO, MAX_ARQUIVO_TECNICO, conferirTamanho, mbTexto } from './limites'
+
+export { MAX_ARQUIVO_FORMULARIO }
+
+/** Limite que vale para um envio: o do plano e se existe plano maior. */
+export type Limite = { max: number; podeSubir: boolean }
+const SEM_PLANO: Limite = { max: MAX_ARQUIVO_TECNICO, podeSubir: false }
 
 const TIPOS_IMAGEM: Record<string, string> = {
   'image/jpeg': 'jpg',
@@ -15,11 +22,9 @@ const TIPOS_IMAGEM: Record<string, string> = {
 }
 
 export const MAX_IMAGEM = 8 * 1024 * 1024
-// O Worker aceita corpo de até 100 MB, mas tem só 128 MB de memória: arquivo
-// grande vai pelo envio direto (enviarArquivoDireto), que passa em fluxo sem
-// ficar inteiro na memória. Pelo formulário comum (navegador sem JS), 25 MB.
-export const MAX_ARQUIVO = 95 * 1024 * 1024
-export const MAX_ARQUIVO_FORMULARIO = 25 * 1024 * 1024
+// Arquivo à venda: o limite vem do plano (src/lib/limites.ts). O envio direto
+// (enviarArquivoDireto) passa em fluxo sem ficar inteiro na memória; pelo
+// formulário comum (navegador sem JS), no máximo 25 MB.
 
 /** Um <input type=file> vazio chega como File de tamanho zero. */
 export function arquivoEnviado(v: unknown): File | null {
@@ -35,8 +40,12 @@ export async function guardarImagem(env: Env, lojaId: string, arquivo: File): Pr
   return key
 }
 
-export async function guardarArquivo(env: Env, lojaId: string, arquivo: File): Promise<{ key: string; nome: string; tamanho: number }> {
-  if (arquivo.size > MAX_ARQUIVO_FORMULARIO) throw new Error('Arquivo grande demais para este navegador (máximo 25 MB). Atualize o navegador ou comprima o PDF.')
+export async function guardarArquivo(env: Env, lojaId: string, arquivo: File, limite: Limite = SEM_PLANO): Promise<{ key: string; nome: string; tamanho: number }> {
+  const erro = conferirTamanho(arquivo.size, limite.max, limite.podeSubir)
+  if (erro) throw new Error(erro)
+  if (arquivo.size > MAX_ARQUIVO_FORMULARIO) {
+    throw new Error(`Arquivo grande demais para este navegador (máximo ${mbTexto(MAX_ARQUIVO_FORMULARIO)} sem JavaScript). Atualize o navegador ou comprima o PDF.`)
+  }
   const nome = nomeSeguro(arquivo.name || 'arquivo.pdf')
   const key = `arq/${lojaId}/${gerarId()}/${nome}`
   await env.ARQUIVOS.put(key, arquivo.stream(), {
@@ -46,16 +55,31 @@ export async function guardarArquivo(env: Env, lojaId: string, arquivo: File): P
 }
 
 /** Envio direto: o corpo da requisição vai em fluxo para o R2. */
-export async function enviarArquivoDireto(env: Env, lojaId: string, req: Request, nomeOriginal: string): Promise<{ key: string; nome: string; tamanho: number }> {
+export async function enviarArquivoDireto(
+  env: Env,
+  lojaId: string,
+  req: Request,
+  nomeOriginal: string,
+  limite: Limite = SEM_PLANO,
+): Promise<{ key: string; nome: string; tamanho: number }> {
+  // Sem Content-Length (envio "chunked") não dá para conferir antes: recusa.
   const tamanho = Number(req.headers.get('content-length') || 0)
-  if (!tamanho || !req.body) throw new Error('Arquivo vazio.')
-  if (tamanho > MAX_ARQUIVO) throw new Error('Arquivo grande demais (máximo 95 MB). Comprima o PDF ou divida em partes.')
+  if (!req.body) throw new Error('Arquivo vazio.')
+  const erro = conferirTamanho(tamanho, limite.max, limite.podeSubir)
+  if (erro) throw new Error(erro)
   const nome = nomeSeguro(nomeOriginal || 'arquivo.pdf')
   const key = `arq/${lojaId}/${gerarId()}/${nome}`
   const obj = await env.ARQUIVOS.put(key, req.body, {
     httpMetadata: { contentType: (req.headers.get('content-type') || 'application/octet-stream').slice(0, 100) },
   })
-  return { key, nome, tamanho: obj?.size ?? tamanho }
+  // Confere o que de fato foi gravado, não só o que o cabeçalho prometeu.
+  const gravado = obj?.size ?? tamanho
+  const erroGravado = conferirTamanho(gravado, limite.max, limite.podeSubir)
+  if (erroGravado) {
+    await env.ARQUIVOS.delete(key)
+    throw new Error(erroGravado)
+  }
+  return { key, nome, tamanho: gravado }
 }
 
 /** Confere que um arquivo enviado direto é mesmo desta loja e existe. */

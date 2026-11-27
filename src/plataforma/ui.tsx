@@ -5,6 +5,7 @@
 import type { Child, PropsWithChildren } from 'hono/jsx'
 import type { Context } from 'hono'
 import { deleteCookie, getCookie, setCookie } from 'hono/cookie'
+import { mbTexto } from '../lib/limites'
 
 // ── aviso que sobrevive a um redirect ("Produto salvo.") ───────────────────
 
@@ -187,6 +188,8 @@ export function CampoArquivo(p: {
   multiplo?: boolean
   reduzir?: string | boolean
   direto?: boolean
+  /** Tamanho máximo, conferido no navegador antes do envio (src/lib/limites.ts). */
+  limite?: { max: number; podeSubir: boolean }
 }) {
   const id = `c-${p.nome}`
   return (
@@ -200,6 +203,9 @@ export function CampoArquivo(p: {
         multiple={p.multiplo}
         data-reduzir-imagem={p.reduzir === true ? '' : p.reduzir || undefined}
         data-direto={p.direto ? '' : undefined}
+        data-max-bytes={p.limite ? String(p.limite.max) : undefined}
+        data-max-texto={p.limite ? mbTexto(p.limite.max) : undefined}
+        data-pode-subir={p.limite?.podeSubir ? 'sim' : undefined}
         aria-invalid={p.erro ? 'true' : undefined}
         aria-describedby={descritoPor(id, p.ajuda, p.erro)}
       />
