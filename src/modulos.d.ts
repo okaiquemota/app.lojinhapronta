@@ -7,6 +7,10 @@ declare module '*.js.txt' {
   const texto: string
   export default texto
 }
+declare module '*.png' {
+  const dados: ArrayBuffer
+  export default dados
+}
 declare module '*.svg' {
   const texto: string
   export default texto

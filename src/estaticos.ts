@@ -20,12 +20,15 @@ import favicon from '../public/_lp/favicon.svg'
 import faviconLoja from '../public/_lp/favicon-loja.svg'
 import siteCss from '../public/_lp/site.css'
 import siteJs from '../public/_lp/site.js.txt'
+import ogPng from '../public/_lp/og.png'
+import iconePng from '../public/_lp/icone-180.png'
 
 const CSS = 'text/css; charset=utf-8'
 const JS = 'text/javascript; charset=utf-8'
 const SVG = 'image/svg+xml'
+const PNG = 'image/png'
 
-const FONTES: Record<string, { corpo: string; tipo: string }> = {
+const FONTES: Record<string, { corpo: string | ArrayBuffer; tipo: string }> = {
   'plataforma.css': { corpo: `${tokensCss}\n${plataformaCss}`, tipo: CSS },
   'plataforma.js': { corpo: plataformaJs, tipo: JS },
   'loja.css': { corpo: `${tokensCss}\n${lojaCss}`, tipo: CSS },
@@ -34,14 +37,23 @@ const FONTES: Record<string, { corpo: string; tipo: string }> = {
   'site.js': { corpo: siteJs, tipo: JS },
   'favicon.svg': { corpo: favicon, tipo: SVG },
   'favicon-loja.svg': { corpo: faviconLoja, tipo: SVG },
+  'og.png': { corpo: ogPng, tipo: PNG },
+  'icone-180.png': { corpo: iconePng, tipo: PNG },
 }
 
 /** FNV-1a de 32 bits: rápido, síncrono e bom o bastante para versão de cache. */
-function resumo(texto: string): string {
+function resumo(conteudo: string | ArrayBuffer): string {
   let h = 0x811c9dc5
-  for (let i = 0; i < texto.length; i++) {
-    h ^= texto.charCodeAt(i)
-    h = Math.imul(h, 0x01000193)
+  if (typeof conteudo === 'string') {
+    for (let i = 0; i < conteudo.length; i++) {
+      h ^= conteudo.charCodeAt(i)
+      h = Math.imul(h, 0x01000193)
+    }
+  } else {
+    for (const b of new Uint8Array(conteudo)) {
+      h ^= b
+      h = Math.imul(h, 0x01000193)
+    }
   }
   return (h >>> 0).toString(36)
 }
