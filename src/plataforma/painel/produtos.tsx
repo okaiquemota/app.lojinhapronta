@@ -112,6 +112,69 @@ function verNaLoja(c: Ctx, p: Produto) {
   )
 }
 
+type Situacao = 'a_venda' | 'falta_arquivo' | 'arquivado' | 'escondido'
+
+export function situacaoDe(p: Produto): Situacao {
+  if (p.arquivado) return 'arquivado'
+  if (!p.arquivo_key) return 'falta_arquivo'
+  return p.ativo ? 'a_venda' : 'escondido'
+}
+
+/** Por que o produto não pode ir à venda agora (ou null se pode). */
+async function motivoParaNaoVender(c: Ctx, temArquivo: boolean, jaAtivo: boolean): Promise<string | null> {
+  if (!temArquivo) return 'falta o arquivo que a cliente recebe. Envie o arquivo em “Arquivo entregue” e salve.'
+  if (jaAtivo) return null
+  const loja = c.get('loja')
+  const limiteP = await limiteDeProdutos(c.env, loja)
+  if (limiteP !== null && (await contarProdutosAtivos(c.env, loja.id)) >= limiteP) {
+    return `seu plano permite ${limiteP} produtos à venda e esse limite já foi atingido. Esconda outro produto ou mude de plano.`
+  }
+  return null
+}
+
+/** Topo da edição: diz se está na loja, por quê não está e o que fazer. */
+export function SituacaoDoProduto({ produto }: { produto: Produto }) {
+  const s = situacaoDe(produto)
+  const acao = (valor: 'vender' | 'esconder', texto: string, tipo: 'principal' | 'secundario' = 'principal') => (
+    <form method="post" action={`/painel/produtos/${produto.id}/situacao`} class="form form--linha">
+      <Botao tipo={tipo} nome="acao" valor={valor}>
+        {texto}
+      </Botao>
+    </form>
+  )
+  if (s === 'a_venda') {
+    return (
+      <Cartao titulo={<>Situação: <Etiqueta cor="verde">À venda</Etiqueta></>} descricao="Está na vitrine e pode ser comprado." acao={acao('esconder', 'Esconder da loja', 'secundario')} />
+    )
+  }
+  if (s === 'falta_arquivo') {
+    return (
+      <Cartao titulo={<>Situação: <Etiqueta cor="amarelo">Escondido · falta o arquivo</Etiqueta></>}>
+        <Nota tipo="alerta">
+          Ele não aparece na loja porque ainda não tem o arquivo que a cliente baixa depois de pagar. <a href="#c-arquivo">Envie o arquivo</a> em
+          “Arquivo entregue”, deixe “À venda” marcado e clique em <strong>Salvar produto</strong>: ele entra na loja na hora.
+        </Nota>
+      </Cartao>
+    )
+  }
+  if (s === 'arquivado') {
+    return (
+      <Cartao
+        titulo={<>Situação: <Etiqueta>Arquivado</Etiqueta></>}
+        descricao="Foi excluído depois de já ter vendas: saiu da loja, e quem comprou continua baixando."
+        acao={acao('vender', 'Colocar à venda de novo')}
+      />
+    )
+  }
+  return (
+    <Cartao
+      titulo={<>Situação: <Etiqueta>Escondido</Etiqueta></>}
+      descricao="Está pronto para vender, mas foi escondido da loja. Quem já comprou continua baixando."
+      acao={acao('vender', 'Colocar à venda')}
+    />
+  )
+}
+
 /** Excluir fica longe do salvar, no fim da página, e pede confirmação. */
 function ZonaDePerigo({ produto }: { produto: Produto }) {
   return (
@@ -146,7 +209,9 @@ function valoresDe(p?: Produto | null): Valores {
     resumo: p?.resumo ?? '',
     descricao: p?.descricao ?? '',
     limite_downloads: p ? (p.limite_downloads == null ? '' : String(p.limite_downloads)) : '5',
-    ativo: p ? !!p.ativo : true,
+    // Escondido só por falta de arquivo: o "À venda" vem marcado, para que
+    // anexar o arquivo e salvar já coloque o produto na loja.
+    ativo: p ? !!p.ativo || (!p.arquivo_key && !p.arquivado) : true,
     destaque: !!p?.destaque,
   }
 }
@@ -172,8 +237,8 @@ function Formulario({
           <Cartao titulo="O produto">
             <Campo rotulo="Nome" nome="nome" valor={v.nome} obrigatorio max={120} erro={erros.nome} placeholder="Ex.: Alfabeto ilustrado · 42 páginas" />
             <div class="linha-campos">
-              <Campo rotulo="Preço" nome="preco" valor={v.preco} obrigatorio prefixo="R$" modo="decimal" placeholder="19,90" erro={erros.preco} ajuda="0 para material grátis." />
-              <Campo rotulo="Preço antigo (opcional)" nome="preco_de" valor={v.preco_de} prefixo="R$" modo="decimal" placeholder="29,90" ajuda="Aparece riscado ao lado do preço." />
+              <Campo rotulo="Preço" nome="preco" valor={v.preco} obrigatorio prefixo="R$" moeda placeholder="0,00" erro={erros.preco} ajuda="Digite só os números: 1990 vira 19,90. Deixe 0,00 para material grátis." />
+              <Campo rotulo="Preço antigo (opcional)" nome="preco_de" valor={v.preco_de} prefixo="R$" moeda placeholder="0,00" ajuda="Aparece riscado ao lado do preço." />
             </div>
             <Selecao
               rotulo="Categoria"
@@ -257,7 +322,12 @@ function Formulario({
           </Cartao>
 
           <Cartao titulo="Na vitrine">
-            <Marcador nome="ativo" marcado={v.ativo} rotulo="À venda" ajuda="Desmarque para esconder sem apagar." />
+            <Marcador
+              nome="ativo"
+              marcado={v.ativo}
+              rotulo="À venda"
+              ajuda={produto?.arquivo_key || !produto ? 'Desmarque para esconder sem apagar.' : 'Fica marcado: o produto entra na loja assim que tiver o arquivo.'}
+            />
             <Marcador nome="destaque" marcado={v.destaque} rotulo="Destaque" ajuda="Aparece primeiro na página inicial." />
             {erros.ativo && <p class="campo__erro">{erros.ativo}</p>}
           </Cartao>
@@ -292,9 +362,9 @@ async function salvar(c: Ctx, existente: Produto | null): Promise<{ ok: true; id
   const erros: Record<string, string> = {}
   if (v.nome.length < 2) erros.nome = 'Dê um nome ao produto.'
   const preco = centavosDeTexto(v.preco)
-  if (preco === null) erros.preco = 'Preço inválido. Use o formato 19,90.'
+  if (preco === null) erros.preco = 'Preço inválido. Digite só os números, por exemplo 1990 para R$ 19,90.'
   else if (preco > 0 && preco < 100) erros.preco = 'O Mercado Pago não aceita cobrança abaixo de R$ 1,00. Use 0 para grátis.'
-  const precoDe = v.preco_de ? centavosDeTexto(v.preco_de) : null
+  const precoDe = v.preco_de ? centavosDeTexto(v.preco_de) || null : null
   const limite = v.limite_downloads ? Math.max(1, Math.min(999, Number(v.limite_downloads) || 0)) : null
 
   let categoriaId: string | null = null
@@ -333,16 +403,12 @@ async function salvar(c: Ctx, existente: Produto | null): Promise<{ ok: true; id
   // Ficar à venda exige arquivo e caber no plano.
   let ativo = v.ativo
   let aviso = existente ? 'Produto salvo.' : 'Produto cadastrado.'
-  if (ativo && !temArquivo) {
-    ativo = false
-    aviso = 'Produto salvo, mas escondido: envie o arquivo para colocá-lo à venda.'
-  }
-  if (ativo && !existente?.ativo) {
-    const limiteP = await limiteDeProdutos(c.env, loja)
-    if (limiteP !== null && (await contarProdutosAtivos(c.env, loja.id)) >= limiteP) {
+  if (ativo) {
+    const motivo = await motivoParaNaoVender(c, temArquivo, !!existente?.ativo && !existente.arquivado)
+    if (motivo) {
       ativo = false
-      aviso = `Produto salvo, mas escondido: seu plano permite ${limiteP} produtos à venda. Mude de plano para vender mais.`
-    }
+      aviso = `Produto salvo, mas escondido: ${motivo}`
+    } else if (existente && !existente.ativo) aviso = 'Produto salvo e colocado à venda.'
   }
 
   const t = agora()
@@ -476,6 +542,7 @@ export function rotasProdutos(app: AppPainel) {
         acoes: verNaLoja(c, p),
       },
       <>
+        <SituacaoDoProduto produto={p} />
         <Formulario produto={p} v={valoresDe(p)} categorias={await categoriasDa(c)} erros={{}} limite={await limiteDeArquivo(c.env, c.get('loja'))} />
         <ZonaDePerigo produto={p} />
       </>,
@@ -491,12 +558,32 @@ export function rotasProdutos(app: AppPainel) {
         c,
         { ativo: 'produtos', titulo: p.nome, voltar: { href: '/painel/produtos', texto: 'Produtos' }, acoes: verNaLoja(c, p), aviso: erroGeral, status: 422 },
         <>
+          <SituacaoDoProduto produto={p} />
           <Formulario produto={p} v={r.v} categorias={await categoriasDa(c)} erros={r.erros} limite={await limiteDeArquivo(c.env, c.get('loja'))} />
           <ZonaDePerigo produto={p} />
         </>,
       )
     }
     avisar(c, r.aviso, r.aviso.includes('escondido') ? 'erro' : 'ok')
+    return c.redirect(`/painel/produtos/${p.id}`)
+  })
+
+  // Colocar à venda / esconder sem passar pelo formulário inteiro.
+  app.post('/produtos/:id/situacao', async (c) => {
+    const p = await produtoDa(c, c.req.param('id'))
+    if (!p) return c.notFound()
+    const acao = (await c.req.parseBody()).acao
+    if (acao === 'esconder') {
+      await c.env.DB.prepare('UPDATE produtos SET ativo = 0, atualizado_em = ? WHERE id = ?').bind(agora(), p.id).run()
+      avisar(c, 'Produto escondido. Ele saiu da loja, e quem já comprou continua baixando.')
+    } else if (acao === 'vender') {
+      const motivo = await motivoParaNaoVender(c, !!p.arquivo_key, !!p.ativo && !p.arquivado)
+      if (motivo) avisar(c, `Ainda não dá para colocar à venda: ${motivo}`, 'erro')
+      else {
+        await c.env.DB.prepare('UPDATE produtos SET ativo = 1, arquivado = 0, atualizado_em = ? WHERE id = ?').bind(agora(), p.id).run()
+        avisar(c, 'Produto à venda. Já aparece na loja.')
+      }
+    }
     return c.redirect(`/painel/produtos/${p.id}`)
   })
 

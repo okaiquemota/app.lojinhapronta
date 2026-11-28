@@ -99,3 +99,43 @@ describe('painel: limite de tamanho no navegador', () => {
     assert.equal(envios(), 1)
   })
 })
+
+describe('campo de preço com máscara de banco', () => {
+  function campoMoeda(valor = '') {
+    const dom = new JSDOM(`<form><input name="preco" data-moeda value="${valor}" /></form>`, { runScripts: 'outside-only' })
+    const w = dom.window as any
+    w.eval(js)
+    const input = w.document.querySelector('input') as HTMLInputElement
+    const digitar = (texto: string) => {
+      input.value = texto
+      input.dispatchEvent(new w.Event('input', { bubbles: true }))
+      return input.value
+    }
+    return { input, digitar }
+  }
+
+  it('digita só números e a vírgula se ajeita sozinha', () => {
+    const { digitar } = campoMoeda()
+    assert.equal(digitar('1'), '0,01')
+    assert.equal(digitar('0,019'), '0,19')
+    assert.equal(digitar('0,199'), '1,99')
+    assert.equal(digitar('1,990'), '19,90')
+    assert.equal(digitar('100'), '1,00')
+    assert.equal(digitar('123456'), '1.234,56')
+    assert.equal(digitar('0'), '0,00')
+    assert.equal(digitar(''), '')
+  })
+
+  it('apagar um dígito volta uma casa', () => {
+    const { digitar } = campoMoeda()
+    assert.equal(digitar('19,9'), '1,99')
+  })
+
+  it('mantém o preço que veio do servidor', () => {
+    assert.equal(campoMoeda('19,90').input.value, '19,90')
+    assert.equal(campoMoeda('1.234,56').input.value, '1.234,56')
+    assert.equal(campoMoeda('19.9').input.value, '19,90')
+    assert.equal(campoMoeda('19').input.value, '19,00')
+    assert.equal(campoMoeda('').input.value, '')
+  })
+})

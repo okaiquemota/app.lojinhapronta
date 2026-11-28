@@ -54,6 +54,8 @@ describe('dinheiro', () => {
   it('devolve o preço ao campo no mesmo formato', () => {
     assert.equal(centavosParaCampo(1990), '19,90')
     assert.equal(centavosParaCampo(5), '0,05')
+    assert.equal(centavosParaCampo(123456), '1.234,56')
+    assert.equal(centavosDeTexto(centavosParaCampo(123456)), 123456)
     assert.equal(centavosParaCampo(null), '')
   })
 })
