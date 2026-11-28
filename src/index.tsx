@@ -25,7 +25,6 @@ import { usarApiDeTeste } from './lib/mercadopago'
 import { usarStripeDeTeste } from './lib/stripe'
 import { cabecalhosPlataforma } from './lib/cabecalhos'
 import { PaginaErro } from './plataforma/layout'
-import { robotsDoApp, robotsDoSite, sitemapDoSite } from './plataforma/seo'
 
 const plataforma = new Hono<{ Bindings: Env }>()
 
@@ -40,8 +39,6 @@ plataforma.use('*', async (c, next) => {
   await next()
 })
 
-// app. é só conta e painel: o Google não tem o que achar ali.
-plataforma.get('/robots.txt', () => robotsDoApp())
 plataforma.route('/', publico)
 plataforma.route('/painel', painel)
 plataforma.route('/admin', admin)
@@ -85,8 +82,6 @@ export default {
     const host = url.hostname.toLowerCase()
     const raiz = env.DOMINIO_RAIZ.toLowerCase()
     if (host === `www.${raiz}`) return Response.redirect(`https://${raiz}${url.pathname}${url.search}`, 301)
-    if (host === raiz && url.pathname === '/robots.txt') return robotsDoSite(env)
-    if (host === raiz && url.pathname === '/sitemap.xml') return sitemapDoSite(env)
     if (host === raiz && url.pathname !== '/') return Response.redirect(`${env.APP_URL}${url.pathname}${url.search}`, 301)
 
     const alvo = resolverHost(url.hostname, env)
