@@ -1,0 +1,71 @@
+# Publica o Worker sozinho a cada merge na main: roda os testes, aplica as
+# migrações do banco (D1 remoto) e faz o deploy. Em PR, só roda os testes.
+# Precisa dos secrets CLOUDFLARE_API_TOKEN e CLOUDFLARE_ACCOUNT_ID no GitHub
+# (Settings → Secrets and variables → Actions). Ver README, "Publicação automática".
+name: Publicar
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  # Botão "Run workflow" na aba Actions, para publicar com um clique.
+  workflow_dispatch:
+
+# Nunca duas publicações ao mesmo tempo; a segunda espera a primeira terminar.
+concurrency:
+  group: ${{ github.event_name == 'pull_request' && format('testes-{0}', github.ref) || 'publicar' }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
+jobs:
+  testes:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run checar
+      - run: npm test
+
+  publicar:
+    needs: testes
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+
+      - name: Conferir os secrets do GitHub
+        run: |
+          if [ -z "$CLOUDFLARE_API_TOKEN" ] || [ -z "$CLOUDFLARE_ACCOUNT_ID" ]; then
+            echo "::error::Faltam os secrets CLOUDFLARE_API_TOKEN e/ou CLOUDFLARE_ACCOUNT_ID (ver README, Publicação automática)."
+            exit 1
+          fi
+
+      - name: Aplicar migrações do banco (D1 remoto)
+        run: npm run banco:remoto
+
+      - name: Publicar o Worker
+        run: npm run deploy
+
+      - name: Conferir segredos do Worker
+        continue-on-error: true
+        run: |
+          lista=$(npx wrangler secret list --format json)
+          for nome in SEGREDO_APP TURNSTILE_SECRET; do
+            if ! echo "$lista" | grep -q "\"$nome\""; then
+              echo "::warning::O segredo $nome não está cadastrado no Worker. Cadastre no painel da Cloudflare (Workers → lojinha-pronta → Settings → Variables and Secrets)."
+            fi
+          done
