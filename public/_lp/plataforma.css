@@ -569,3 +569,11 @@ hr { border: 0; border-top: 1px solid var(--borda); margin: 0; }
 .plano .lista-check { flex: 1; padding-top: var(--e-4); border-top: 1px solid var(--borda); }
 .plano__atual { display: flex; align-items: center; justify-content: center; gap: var(--e-2); min-height: var(--controle); border-radius: var(--r-2); background: var(--ok-fundo); color: var(--ok); font-weight: var(--peso-forte); }
 .plano__atual .icone { width: 1rem; height: 1rem; }
+
+/* ── páginas legais da plataforma (termos, privacidade) ──────────────── */
+.central--texto .central__caixa { max-width: 46rem; gap: var(--e-4); }
+.texto-legal h2 { font-size: var(--t-5); margin-top: var(--e-4); }
+.texto-legal ul { display: grid; gap: var(--e-2); padding-left: var(--e-5); }
+.texto-legal li { list-style: disc; }
+.texto-legal p, .texto-legal li { line-height: var(--lh-texto); }
+.texto-legal a { text-decoration: underline; }

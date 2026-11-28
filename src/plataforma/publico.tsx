@@ -14,6 +14,7 @@ import { conferirSenha, gerarId, gerarToken, hashSenha, sha256 } from '../lib/se
 import { abrirSessao, fecharSessao, limparTentativas, registrarTentativa, tentativasRecentes, usuarioDaSessao } from '../lib/sessao'
 import { contarPorIp, excedeuPorIp, gastarTempoDeSenha, passouNoTurnstile, problemaNaSenha, turnstileLigado } from '../lib/protecao'
 import { enviarEmail, moldeEmail } from '../lib/email'
+import { Privacidade, Termos } from './legal'
 
 const app = new Hono<{ Bindings: Env }>()
 
@@ -97,6 +98,8 @@ function FormCadastro({ env, d, erros, aviso }: { env: Env; d: DadosCadastro; er
       rodape={
         <>
           Já tem loja? <a href="/entrar">Entrar</a>
+          <br />
+          Ao criar a loja, você concorda com os <a href="/termos">Termos de uso</a> e a <a href="/privacidade">Política de privacidade</a>.
         </>
       }
     >
@@ -190,6 +193,12 @@ function FormCadastro({ env, d, erros, aviso }: { env: Env; d: DadosCadastro; er
     </TelaCentral>
   )
 }
+
+// ── páginas legais da plataforma ───────────────────────────────────────────
+
+app.get('/robots.txt', (c) => c.text('User-agent: *\nDisallow: /painel\nDisallow: /admin\nDisallow: /webhooks\n'))
+app.get('/termos', (c) => c.html(<Termos env={c.env} />))
+app.get('/privacidade', (c) => c.html(<Privacidade env={c.env} />))
 
 app.get('/cadastro', async (c) => {
   if (await usuarioDaSessao(c)) return c.redirect('/painel')

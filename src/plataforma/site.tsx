@@ -584,6 +584,8 @@ export function PaginaInicial({ env, planos }: { env: Env; planos: Plano[] }) {
                   <a href={l.href}>{l.texto}</a>
                 ))}
                 <a href={`${app}/entrar`}>Entrar</a>
+                <a href={`${app}/termos`}>Termos de uso</a>
+                <a href={`${app}/privacidade`}>Privacidade</a>
               </nav>
               <div class="rodape__legal">
                 <p>© {ano} Lojinha Pronta · <span>WhatsApp (16) 98215-7266</span></p>
