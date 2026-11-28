@@ -64,8 +64,10 @@ jobs:
         continue-on-error: true
         run: |
           lista=$(npx wrangler secret list --format json)
-          for nome in SEGREDO_APP TURNSTILE_SECRET; do
-            if ! echo "$lista" | grep -q "\"$nome\""; then
+          for nome in SEGREDO_APP TURNSTILE_SECRET ADMIN_EMAILS STRIPE_SECRET_KEY STRIPE_WEBHOOK_SECRET RESEND_API_KEY MP_CLIENT_ID MP_CLIENT_SECRET; do
+            if echo "$lista" | grep -q "\"$nome\""; then
+              echo "ok: $nome"
+            else
               echo "::warning::O segredo $nome não está cadastrado no Worker. Cadastre no painel da Cloudflare (Workers → lojinha-pronta → Settings → Variables and Secrets)."
             fi
           done

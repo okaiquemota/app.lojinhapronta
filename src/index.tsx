@@ -82,6 +82,14 @@ export default {
     const host = url.hostname.toLowerCase()
     const raiz = env.DOMINIO_RAIZ.toLowerCase()
     if (host === `www.${raiz}`) return Response.redirect(`https://${raiz}${url.pathname}${url.search}`, 301)
+    if (host === raiz && url.pathname === '/robots.txt') {
+      return new Response(`User-agent: *\nAllow: /\n\nSitemap: https://${raiz}/sitemap.xml\n`, { headers: { 'Content-Type': 'text/plain; charset=utf-8' } })
+    }
+    if (host === raiz && url.pathname === '/sitemap.xml') {
+      const paginas = [`https://${raiz}/`, `${env.APP_URL}/termos`, `${env.APP_URL}/privacidade`]
+      const xml = `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n${paginas.map((u) => `  <url><loc>${u}</loc></url>`).join('\n')}\n</urlset>\n`
+      return new Response(xml, { headers: { 'Content-Type': 'application/xml; charset=utf-8' } })
+    }
     if (host === raiz && url.pathname !== '/') return Response.redirect(`${env.APP_URL}${url.pathname}${url.search}`, 301)
 
     const alvo = resolverHost(url.hostname, env)
