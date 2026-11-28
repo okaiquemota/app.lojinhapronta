@@ -101,7 +101,9 @@ hr { border: 0; border-top: 1px solid var(--borda); margin: 0; }
 .form--linha { display: flex; align-items: flex-end; gap: var(--e-3); flex-wrap: wrap; }
 .form--linha .campo { flex: 1; min-width: 12rem; }
 .form__rodape { text-align: center; font-size: var(--t-3); color: var(--texto-2); }
-.campo { display: grid; gap: var(--e-2); min-width: 0; }
+/* align-content: start — numa linha de campos, o vizinho com texto de ajuda deixa a
+   célula mais alta; sem isso a sobra se espalha entre rótulo e controle. */
+.campo { display: grid; gap: var(--e-2); min-width: 0; align-content: start; }
 .campo > label, .rotulo { font-size: var(--t-3); font-weight: var(--peso-medio); color: var(--texto); }
 
 .campo input:not([type=checkbox]):not([type=radio]):not([type=color]):not([type=file]),
@@ -137,7 +139,8 @@ hr { border: 0; border-top: 1px solid var(--borda); margin: 0; }
 }
 .campo__grupo:hover { border-color: var(--texto-3); }
 .campo__grupo:focus-within { border-color: var(--foco); box-shadow: var(--anel); }
-.campo .campo__grupo input { border: 0 !important; box-shadow: none !important; border-radius: 0; min-width: 0; flex: 1; }
+/* A borda fica no grupo: o input desconta os 2px para o grupo ter a altura de um campo comum. */
+.campo .campo__grupo input { border: 0 !important; box-shadow: none !important; border-radius: 0; min-width: 0; flex: 1; min-height: calc(var(--controle) - 2px) !important; }
 .campo__prefixo, .campo__sufixo { display: flex; align-items: center; padding: 0 var(--e-3); background: var(--fundo); color: var(--texto-3); font-size: var(--t-3); white-space: nowrap; }
 .campo__prefixo { border-right: 1px solid var(--borda); }
 .campo__sufixo { border-left: 1px solid var(--borda); }
