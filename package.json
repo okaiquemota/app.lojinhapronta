@@ -7,7 +7,7 @@
     "dev": "wrangler dev",
     "deploy": "wrangler deploy",
     "checar": "tsc --noEmit",
-    "testar": "esbuild testes/*.test.ts --bundle --platform=node --format=esm --outdir=.testes --external:jsdom --log-level=warning && node --test '.testes/*.test.js'",
+    "testar": "esbuild testes/*.test.ts --bundle --platform=node --format=esm --outdir=.testes --external:jsdom --loader:.css=text --loader:.svg=text --loader:.txt=text --loader:.png=empty --log-level=warning && node --test '.testes/*.test.js'",
     "test": "npm run testar",
     "banco:local": "wrangler d1 migrations apply DB --local",
     "banco:remoto": "wrangler d1 migrations apply DB --remote"

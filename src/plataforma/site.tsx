@@ -202,6 +202,29 @@ const PERGUNTAS = [
   },
 ]
 
+/** Organização, site e o produto (com o menor preço), para o Google entender a página. */
+function dadosEstruturados(env: Env, descricao: string, menorCentavos: number) {
+  const site = `${env.SITE_URL}/`
+  const org = { '@type': 'Organization', '@id': `${site}#organizacao`, name: 'Lojinha Pronta', url: site, logo: `${env.SITE_URL}${urlEstatico('icone-180.png')}` }
+  const app: Record<string, unknown> = {
+    '@type': 'SoftwareApplication',
+    name: 'Lojinha Pronta',
+    url: site,
+    description: descricao,
+    applicationCategory: 'BusinessApplication',
+    operatingSystem: 'Web',
+    inLanguage: 'pt-BR',
+    publisher: { '@id': org['@id'] },
+  }
+  if (Number.isFinite(menorCentavos)) {
+    app.offers = { '@type': 'Offer', price: (menorCentavos / 100).toFixed(2), priceCurrency: 'BRL', url: `${env.APP_URL}/cadastro` }
+  }
+  return {
+    '@context': 'https://schema.org',
+    '@graph': [org, { '@type': 'WebSite', name: 'Lojinha Pronta', url: site, inLanguage: 'pt-BR', publisher: { '@id': org['@id'] } }, app],
+  }
+}
+
 export function PaginaInicial({ env, planos }: { env: Env; planos: Plano[] }) {
   // A página mora em lojinhapronta.com.br; cadastro e login, em app.
   const app = env.APP_URL
@@ -209,7 +232,7 @@ export function PaginaInicial({ env, planos }: { env: Env; planos: Plano[] }) {
   const menor = planos.reduce((m, p) => Math.min(m, p.preco_centavos), Infinity)
   const ano = new Date().getUTCFullYear()
   const descricao = `Crie sua loja de apostila, molde e material digital em minutos. Pix e cartão no automático, entrega do arquivo na hora. ${dias} dias grátis.`
-  const imagem = `${env.APP_URL}${urlEstatico('og.png')}`
+  const imagem = `${env.SITE_URL}${urlEstatico('og.png')}`
 
   return (
     <>
@@ -241,13 +264,7 @@ export function PaginaInicial({ env, planos }: { env: Env; planos: Plano[] }) {
           <link rel="stylesheet" href={urlEstatico('site.css')} />
           <script type="application/ld+json">
             {raw(
-              JSON.stringify({
-                '@context': 'https://schema.org',
-                '@type': 'Organization',
-                name: 'Lojinha Pronta',
-                url: `${env.SITE_URL}/`,
-                logo: `${env.APP_URL}${urlEstatico('icone-180.png')}`,
-              }).replace(/</g, '\\u003c'),
+              JSON.stringify(dadosEstruturados(env, descricao, menor)).replace(/</g, '\\u003c'),
             )}
           </script>
           <script src={urlEstatico('site.js')} defer></script>
