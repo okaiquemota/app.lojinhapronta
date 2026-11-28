@@ -19,11 +19,13 @@ const COMUNS: Record<string, string> = {
 
 const CSP_PLATAFORMA = [
   "default-src 'self'",
-  "script-src 'self' https://challenges.cloudflare.com",
+  // static.cloudflareinsights.com: o Web Analytics do Cloudflare (contagem de
+  // visitas sem cookie), ligado no painel do Cloudflare.
+  "script-src 'self' https://challenges.cloudflare.com https://static.cloudflareinsights.com",
   "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
   "font-src 'self' https://fonts.gstatic.com",
   "img-src 'self' data: blob:",
-  "connect-src 'self'",
+  "connect-src 'self' https://cloudflareinsights.com",
   'frame-src https://challenges.cloudflare.com',
   // Formulário só manda para cá ou para o checkout do Stripe (o redirect depois
   // do POST também passa por esta regra).
