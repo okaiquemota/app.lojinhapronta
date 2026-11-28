@@ -471,3 +471,36 @@ document.addEventListener('change', async (e) => {
   )
   mostrar(atual, atual > 1)
 })()
+
+// Campos em reais, estilo app de banco: digita só números e a vírgula anda
+// sozinha (1 → 0,01, 19 → 0,19, 1990 → 19,90). Apagar tudo deixa vazio.
+const formatarMoeda = (texto) => {
+  const d = String(texto || '').replace(/\D/g, '').replace(/^0+(?=\d)/, '').slice(0, 9)
+  if (!d) return ''
+  const c = d.padStart(3, '0')
+  const inteiro = c.slice(0, -2).replace(/^0+(?=\d)/, '').replace(/\B(?=(\d{3})+(?!\d))/g, '.')
+  return `${inteiro},${c.slice(-2)}`
+}
+// Valor que veio do servidor ("19,90", "1.234,56", "19.9", "19") vira o formato
+// da máscara sem mudar o preço. Mesma leitura de centavosDeTexto (formato.ts).
+const normalizarMoeda = (texto) => {
+  let t = String(texto || '').replace(/[^\d,.]/g, '')
+  if (!t) return ''
+  if (t.includes(',')) t = t.replace(/\./g, '').replace(',', '.')
+  else if (/\.\d{3}$/.test(t)) t = t.replace(/\./g, '')
+  const n = Number(t)
+  return Number.isFinite(n) ? formatarMoeda(String(Math.round(n * 100))) : ''
+}
+document.querySelectorAll('input[data-moeda]').forEach((input) => {
+  input.value = normalizarMoeda(input.value)
+})
+document.addEventListener('input', (e) => {
+  const input = e.target
+  if (!input.matches?.('input[data-moeda]')) return
+  input.value = formatarMoeda(input.value)
+  // O cursor fica sempre no fim, como nos apps de banco.
+  const fim = input.value.length
+  try {
+    input.setSelectionRange(fim, fim)
+  } catch {}
+})

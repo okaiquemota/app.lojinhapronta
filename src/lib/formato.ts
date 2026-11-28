@@ -17,10 +17,10 @@ export function centavosDeTexto(texto: string | null | undefined): number | null
   return Math.round(n * 100)
 }
 
-/** Centavos → "19,90" para preencher campo de formulário. */
+/** Centavos → "19,90" / "1.234,56" para preencher campo de formulário (o mesmo formato da máscara do painel). */
 export function centavosParaCampo(centavos: number | null | undefined): string {
   if (centavos == null) return ''
-  return `${Math.floor(centavos / 100)},${String(centavos % 100).padStart(2, '0')}`
+  return reais(centavos).replace(/^-?R\$\u00a0/, '')
 }
 
 export function slugificar(texto: string, max = 60): string {

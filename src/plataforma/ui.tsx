@@ -74,6 +74,8 @@ type CampoProps = {
   padrao?: string
   prefixo?: string
   sufixo?: string
+  /** Valor em reais com máscara de banco: digita só números e a vírgula se ajeita sozinha (ver plataforma.js). */
+  moeda?: boolean
   erro?: string | null
   id?: string
   autofocus?: boolean
@@ -112,8 +114,9 @@ export function Campo(p: CampoProps) {
           maxlength={p.max}
           minlength={p.min}
           step={p.passo}
-          autocomplete={p.autocomplete}
-          inputmode={p.modo as any}
+          inputmode={(p.moeda ? 'numeric' : p.modo) as any}
+          data-moeda={p.moeda ? '' : undefined}
+          autocomplete={p.moeda ? 'off' : p.autocomplete}
           pattern={p.padrao}
           autofocus={p.autofocus}
           aria-invalid={p.erro ? 'true' : undefined}
