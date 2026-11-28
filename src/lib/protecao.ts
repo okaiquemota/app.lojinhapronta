@@ -4,8 +4,8 @@
  * - limite por IP, além do limite por e-mail que já existia
  * - Turnstile (anti-robô do Cloudflare), ligado quando TURNSTILE_SITEKEY e
  *   TURNSTILE_SECRET existem
- * - senha que já vazou na internet é recusada (Have I Been Pwned, por
- *   k-anonimato: só os 5 primeiros caracteres do hash saem daqui)
+ * - senha curta ou óbvia demais é recusada (a consulta de senha vazada foi
+ *   desligada a pedido do dono)
  * - mesmo tempo de resposta para e-mail que existe e que não existe
  */
 import type { Context } from 'hono'
@@ -53,7 +53,7 @@ export async function passouNoTurnstile(c: C, token: unknown): Promise<boolean> 
   }
 }
 
-/** Senha fraca demais ou já vazada? Devolve o motivo, ou null se está boa. */
+/** Senha fraca demais? Devolve o motivo, ou null se está boa. */
 export async function problemaNaSenha(senha: string, email?: string): Promise<string | null> {
   if (senha.length < 8) return 'A senha precisa de pelo menos 8 caracteres.'
   if (senha.length > 128) return 'A senha pode ter no máximo 128 caracteres.'
@@ -62,26 +62,6 @@ export async function problemaNaSenha(senha: string, email?: string): Promise<st
   }
   if (email && senha.toLowerCase().includes(email.split('@')[0]!.toLowerCase()) && email.split('@')[0]!.length >= 4) {
     return 'A senha não pode conter o seu e-mail.'
-  }
-  try {
-    const sha1 = [...new Uint8Array(await crypto.subtle.digest('SHA-1', new TextEncoder().encode(senha)))]
-      .map((b) => b.toString(16).padStart(2, '0'))
-      .join('')
-      .toUpperCase()
-    // Consulta de cortesia: se demorar, o cadastro segue sem ela.
-    const r = await fetch(`https://api.pwnedpasswords.com/range/${sha1.slice(0, 5)}`, {
-      headers: { 'Add-Padding': 'true' },
-      signal: AbortSignal.timeout(4_000),
-    })
-    if (r.ok) {
-      const resto = sha1.slice(5)
-      for (const linha of (await r.text()).split('\n')) {
-        const [suf, n] = linha.trim().split(':')
-        if (suf === resto && Number(n) > 0) return 'Essa senha já apareceu em vazamentos na internet. Escolha outra.'
-      }
-    }
-  } catch (e) {
-    console.error('[senha vazada] consulta falhou', e)
   }
   return null
 }
