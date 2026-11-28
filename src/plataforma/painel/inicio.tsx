@@ -7,6 +7,11 @@ import { contarProdutosAtivos, situacaoDaAssinatura } from '../../lib/lojas'
 import { dataHoraBR, reais } from '../../lib/formato'
 import type { Pedido } from '../../tipos'
 
+/** Deixa o endereço quebrar antes de cada ponto, nunca no meio de uma palavra. */
+function quebraNosPontos(texto: string) {
+  return texto.split('.').map((parte, i) => (i ? <><wbr />.{parte}</> : parte))
+}
+
 export function EtiquetaStatus({ status }: { status: Pedido['status'] }) {
   const m = {
     pago: <Etiqueta cor="verde">Pago</Etiqueta>,
@@ -113,7 +118,7 @@ export function rotasInicio(app: AppPainel) {
             <div>
               <p class="rotulo-pequeno">Endereço da sua loja</p>
               <a href={url} target="_blank" rel="noopener" class="link-loja__url">
-                {url.replace(/^https?:\/\//, '')}
+                {quebraNosPontos(url.replace(/^https?:\/\//, ''))}
                 <span class="sr-only"> (abre em outra aba)</span>
               </a>
               <p class="campo__ajuda">É este o link para pôr na bio do Instagram e mandar no WhatsApp.</p>
@@ -146,8 +151,12 @@ export function rotasInicio(app: AppPainel) {
                       </strong>
                     ) : (
                       <a href={p.href}>
-                        {p.texto}
-                        <Icone nome="seguir" />
+                        {/* A última palavra vai grudada na setinha: ela nunca desce sozinha. */}
+                        {p.texto.slice(0, p.texto.lastIndexOf(' ') + 1)}
+                        <span class="sem-quebra">
+                          {p.texto.slice(p.texto.lastIndexOf(' ') + 1)}
+                          <Icone nome="seguir" />
+                        </span>
                       </a>
                     )}
                     <small>{p.detalhe}</small>

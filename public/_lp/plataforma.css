@@ -368,7 +368,8 @@ hr { border: 0; border-top: 1px solid var(--borda); margin: 0; }
 .pilha--texto { max-width: var(--largura-texto); }
 
 .link-loja { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: var(--e-4) var(--e-8); }
-.link-loja__url { display: block; margin-top: var(--e-1); font-size: var(--t-5); font-weight: var(--peso-forte); color: var(--texto); text-decoration: none; word-break: break-all; }
+/* Quebra nos pontos (<wbr> no HTML); overflow-wrap só se um pedaço sozinho não couber. */
+.link-loja__url { display: block; margin-top: var(--e-1); font-size: var(--t-5); font-weight: var(--peso-forte); color: var(--texto); text-decoration: none; overflow-wrap: anywhere; }
 .link-loja__url:hover { text-decoration: underline; }
 .link-loja .campo__ajuda { margin-top: var(--e-1); }
 .link-loja__acoes { display: flex; gap: var(--e-2); flex-wrap: wrap; }
@@ -382,9 +383,11 @@ hr { border: 0; border-top: 1px solid var(--borda); margin: 0; }
 .passos-lista__marca { flex: none; display: grid; place-items: center; width: 1.25rem; height: 1.25rem; margin-top: .0625rem; border-radius: 50%; border: 1.5px solid var(--borda-forte); }
 .feito .passos-lista__marca { background: var(--ok); border-color: var(--ok); color: var(--superficie); }
 .feito .passos-lista__marca .icone { width: .75rem; height: .75rem; stroke-width: 3; }
-.passos-lista a { display: inline-flex; align-items: center; gap: var(--e-1); font-weight: var(--peso-forte); color: var(--texto); text-decoration: none; }
+/* inline: quando o título quebra, a setinha acompanha o fim do texto em vez de flutuar no meio. */
+.passos-lista a { font-weight: var(--peso-forte); color: var(--texto); text-decoration: none; }
 .passos-lista a:hover { text-decoration: underline; }
-.passos-lista a .icone { width: 1rem; height: 1rem; color: var(--texto-3); }
+.passos-lista .sem-quebra { white-space: nowrap; }
+.passos-lista a .icone { display: inline-block; width: 1rem; height: 1rem; margin-left: var(--e-1); vertical-align: -.2em; color: var(--texto-3); }
 .passos-lista small { display: block; color: var(--texto-3); font-size: var(--t-2); }
 .feito strong { color: var(--texto-3); font-weight: var(--peso-medio); }
 
@@ -392,9 +395,10 @@ hr { border: 0; border-top: 1px solid var(--borda); margin: 0; }
   display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 10rem), 1fr)); gap: 1px;
   background: var(--borda); border: 1px solid var(--borda); border-radius: var(--r-3); overflow: hidden;
 }
-.numero { padding: var(--e-5); background: var(--superficie); }
+/* Coluna com o valor no pé: se um rótulo quebra em duas linhas, os valores da mesma linha continuam alinhados. */
+.numero { display: flex; flex-direction: column; gap: var(--e-1); padding: var(--e-5); background: var(--superficie); }
 .numero span { display: block; font-size: var(--t-2); color: var(--texto-3); }
-.numero strong { display: block; margin-top: var(--e-1); font-size: var(--t-6); font-weight: var(--peso-forte); letter-spacing: var(--tracking-titulo); font-variant-numeric: tabular-nums; }
+.numero strong { display: block; margin-top: auto; font-size: var(--t-6); font-weight: var(--peso-forte); letter-spacing: var(--tracking-titulo); font-variant-numeric: tabular-nums; }
 .numero small { font-size: var(--t-3); font-weight: var(--peso-normal); color: var(--texto-3); letter-spacing: 0; }
 @media (max-width: 639px) { .numeros { grid-template-columns: 1fr 1fr; } .numero { padding: var(--e-4); } }
 
