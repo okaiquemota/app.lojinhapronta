@@ -121,6 +121,28 @@ novo antes e depois de gravar. O teto é 95 MB porque a Cloudflare recusa
 qualquer envio acima de 100 MB. Mudar o limite de um plano é um `UPDATE` no
 banco, sem deploy.
 
+## Publicação automática
+
+Todo merge na `main` publica sozinho pelo GitHub Actions
+(`.github/workflows/publicar.yml`): roda `checar` e os testes, aplica as
+migrações do banco (`npm run banco:remoto`) e faz o `npm run deploy`. Em PR, só
+roda os testes. Para publicar sem merge, abra **Actions → Publicar → Run
+workflow** na `main`.
+
+Precisa de dois secrets no GitHub (**Settings → Secrets and variables →
+Actions → New repository secret**):
+
+- `CLOUDFLARE_ACCOUNT_ID`: o ID da conta, que aparece no painel da Cloudflare
+  em **Workers e Pages**, na coluna da direita (*Account ID*).
+- `CLOUDFLARE_API_TOKEN`: crie em **Meu perfil → Tokens de API → Criar token**,
+  modelo **Editar Cloudflare Workers**. Acrescente a permissão
+  **Conta → D1 → Editar**, limite *Recursos da conta* à sua conta e *Recursos
+  da zona* a `lojinhapronta.com.br`.
+
+Os segredos do Worker (`SEGREDO_APP`, `TURNSTILE_SECRET` etc.) continuam no
+Cloudflare, não no GitHub. O deploy avisa se `SEGREDO_APP` ou
+`TURNSTILE_SECRET` estiverem faltando.
+
 ## Colocar no ar
 
 **Migração nova:** a versão de 27/11/2026 traz `migrations/0002_indice_avisos.sql`
