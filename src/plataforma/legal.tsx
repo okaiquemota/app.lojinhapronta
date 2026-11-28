@@ -3,8 +3,10 @@
  * com a lojista (quem cria a loja e paga a mensalidade). As páginas de cada
  * loja, para as compradoras, ficam em src/loja/legal.tsx.
  *
- * Dados da empresa: preencha CNPJ e e-mail em EMPRESA. Campo vazio some do
- * texto, nunca aparece como "[CNPJ]".
+ * Quem responde pelo serviço fica em EMPRESA (os mesmos dados do Poupin). A
+ * MovCode ainda não tem CNPJ: responde a pessoa física que usa o nome MovCode.
+ * Quando a empresa for aberta, troque `responsavel` pela razão social e
+ * preencha `cnpj` (o CPF sai do texto). Campo vazio some do texto.
  */
 import type { Child } from 'hono/jsx'
 import type { Env } from '../tipos'
@@ -12,12 +14,19 @@ import { Documento, Marca } from './layout'
 
 export const EMPRESA = {
   nome: 'MovCode',
+  /** Nome completo ou razão social de quem responde pelo serviço. */
+  responsavel: 'Kaique Henrique Alves Mota',
+  cpf: '449.369.118-28',
   cnpj: '',
-  email: '',
+  /** Endereço físico (exigido pelo Decreto 7.962/2013). */
+  endereco: 'Rua Francisco Buonvicini, 786, Jardim Jandaia, Ribeirão Preto/SP, CEP 14060-380',
+  email: 'contato@movcode.com.br',
+  /** Encarregados pelo tratamento de dados pessoais (LGPD). */
+  encarregados: 'Vinicius Hallal e Kaique Mota',
   whatsapp: '(16) 98215-7266',
   whatsappLink: 'https://wa.me/5516982157266',
   /** Cidade/UF do foro do contrato. Vazio: vale o foro do domicílio da lojista. */
-  foro: '',
+  foro: 'Ribeirão Preto/SP',
 }
 
 const ATUALIZACAO = '28/11/2026'
@@ -37,7 +46,16 @@ function Contato() {
 }
 
 function quem() {
-  return `a Lojinha Pronta, serviço operado pela ${EMPRESA.nome}${EMPRESA.cnpj ? ` (CNPJ ${EMPRESA.cnpj})` : ''}`
+  const documento = EMPRESA.cnpj ? `CNPJ nº ${EMPRESA.cnpj}` : EMPRESA.cpf && `CPF nº ${EMPRESA.cpf}`
+  const operador = [
+    EMPRESA.responsavel || EMPRESA.nome,
+    EMPRESA.responsavel && EMPRESA.nome && EMPRESA.responsavel !== EMPRESA.nome && `que atua sob o nome ${EMPRESA.nome}`,
+    documento,
+    EMPRESA.endereco && `com endereço em ${EMPRESA.endereco}`,
+  ]
+    .filter(Boolean)
+    .join(', ')
+  return `a Lojinha Pronta, serviço operado por ${operador}`
 }
 
 function PaginaLegal({ env, titulo, descricao, children }: { env: Env; titulo: string; descricao: string; children: Child }) {
@@ -216,6 +234,7 @@ export function Privacidade({ env }: { env: Env }) {
       <p>
         Você pode pedir a qualquer momento para confirmar se tratamos seus dados, ver, corrigir, levar para outro serviço ou apagar, e retirar o consentimento quando
         ele for a base. Compradoras podem falar direto com a loja ou com a gente. Peça <Contato />. Respondemos em até 15 dias.
+        {EMPRESA.encarregados && ` Os encarregados pelo tratamento de dados pessoais são ${EMPRESA.encarregados}.`}
       </p>
 
       <h2>8. Segurança</h2>
